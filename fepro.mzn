@@ -145,6 +145,15 @@ forall (c1 in COURSES)
 	         course_class[c1] = course_class[c2]
 		-> week_slot_day[course_slot[c1]] != week_slot_day[course_slot[c2]]));
 
+% A class should have a single teacher for a given subject
+constraint
+forall (c1 in COURSES)
+	(forall (c2 in COURSES where c2 > c1)
+		(course_subject[c1] = course_subject[c2] /\
+		 course_level[c1] = course_level[c2] /\
+	         course_class[c1] = course_class[c2]
+		-> course_teacher[c1] == course_teacher[c2]));
+
 % TODO: Teacher cannot teach less than a certain amount
 % TODO: Teacher cannot teach more than a certain amount
 
