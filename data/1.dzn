@@ -1,0 +1,54 @@
+SLOTS = 1..18;
+slot =
+	[|  800, 100
+	 |  800, 200
+	 |  800, 400
+	 |  900, 100
+         | 1000, 100
+         | 1000, 200
+         | 1100, 100
+	 | 1350, 100
+	 | 1350, 200
+	 | 1350, 400
+	 | 1450, 100
+	 | 1450, 200
+	 | 1450, 400
+	 | 1550, 100
+	 | 1650, 100
+	 | 1650, 200
+	 | 1750, 100
+	 |    0,   0
+|];
+DAY_TYPES = 1..2;
+day_slot_valid =
+	[| true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false	% Normal weekday
+	 | true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false	% Wednesday: only morning
+|];
+DAYS = 1..5;
+day = [ 1, 1, 2, 1, 1];
+
+level = { L_2, L_1, L_1_latin, L_0 };
+subject = { S_math, S_french, S_latin };
+DURATIONS = 1..6;
+duration_types =
+	[| 200, 100, 0, 0	% Math L_2
+	 | 200, 200, 0, 0	% Math L_1 and L_1_latin
+	 | 200, 200, 100, 0	% Math L_0
+	 | 100, 100, 0, 0	% French all levels
+	 | 100, 0, 0, 0		% Latin l_1
+	 | 0, 0, 0, 0		% Dummy
+|];
+level_subject_duration = 
+	[| 1, 4, 6	% L_2
+	 | 2, 4, 6	% L_1
+	 | 2, 4, 5	% L_1_latin
+	 | 3, 4, 6	% L_0
+|];
+level_classes = [ 2, 1, 1, 2 ];
+%level_classes = [ 1, 1, 0, 1 ];
+
+teacher = { T_M_Gouttiere, T_Mme_Chaudiere, T_Mme_Tardiva };
+teacher_subject = [ S_math, S_french, S_latin ];
+teacher_min_hours = [ 1, 1, 1 ];
+teacher_max_hours = [ 10, 10, 10 ];
+
