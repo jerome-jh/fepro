@@ -97,8 +97,6 @@ array[COURSES] of int: course_class = [
 array[COURSES] of var WEEK_SLOTS: course_slot;
 % Every course must have a teacher: here is the mapping
 array[COURSES] of var teacher: course_teacher;
-% Slots where given teacher is busy
-array[teacher, WEEK_SLOTS] of var bool: teacher_slot;
 
 %
 % Constraints
@@ -156,32 +154,29 @@ forall (c1 in COURSES)
 % TODO: Teacher cannot teach less than a certain amount
 % TODO: Teacher cannot teach more than a certain amount
 
-% Channel courses and teacher slots
-constraint forall(c in COURSES) (teacher_slot[course_teacher[c], course_slot[c]] = true);
-
 % Time amplitude per day per teacher
 array[teacher, DAYS] of var TIME: teacher_day_begin_time;
 array[teacher, DAYS] of var TIME: teacher_day_end_time;
 array[teacher, DAYS] of var TIME: teacher_day_amplitude;
 
-% Compute the first course in each day for every teacher. When a teached has no
+% Compute the first course in each day for every teacher. When a teacher has no
 % course that day, result is H_null (2400)
 constraint
 forall (t in teacher, d in DAYS)
 	(teacher_day_begin_time[t, d] = H_null -
-		max([(week_slot_day[s] * H_null - week_slot_start_time[s])
-			* (week_slot_day[s] = d /\ teacher_slot[t, s])
-			| s in WEEK_SLOTS]));
+		max([(week_slot_day[course_slot[c]] * H_null - week_slot_start_time[course_slot[c]])
+			* (course_teacher[c] = t /\ week_slot_day[course_slot[c]] = d)
+			| c in COURSES]));
 
-% Compute the last course + duration in each day for every teacher. When a teached has no
+% Compute the last course + duration in each day for every teacher. When a teacher has no
 % course that day, result is 0
 constraint
 forall (t in teacher, d in DAYS)
 	(teacher_day_end_time[t, d] =
-		max([(week_slot_start_time[s] + week_slot_duration[s]
-				- (week_slot_day[s] - 1) * H_null)
-			* (week_slot_day[s] = d /\ teacher_slot[t, s])
-			| s in WEEK_SLOTS]));
+		max([(week_slot_start_time[course_slot[c]] + week_slot_duration[course_slot[c]]
+				- (week_slot_day[course_slot[c]] - 1) * H_null)
+			* (course_teacher[c] = t /\ week_slot_day[course_slot[c]] = d)
+			| c in COURSES]));
 
 % Compute time amplitude in a worked day for every teacher. When teacher does
 % not work, result is 0
