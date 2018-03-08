@@ -3,7 +3,7 @@
 %
 
 % Time is in base 100
-set of int: TIME = 0..2400;
+set of int: TIME = 0..max(DAYS)*2400;
 TIME: H_null = 2400;
 % Times slots: first element is start time, second element is duration
 set of int: SLOTS;
@@ -51,12 +51,12 @@ array[teacher] of int: teacher_max_hours;
 % Let's build the weekly schedule of slots
 set of int: WEEK_SLOTS = 1 .. sum(d in DAYS)(sum(s in SLOTS)(day_slot_valid[day[d], s]));
 array[WEEK_SLOTS] of TIME: week_slot_start_time = [
-	slot[s, 1] | d in DAYS, s in SLOTS where day_slot_valid[day[d], s]
+	slot[s, 1] + (d - 1) * H_null | d in DAYS, s in SLOTS where day_slot_valid[day[d], s]
 ];
 array[WEEK_SLOTS] of TIME: week_slot_duration = [
 	slot[s, 2] | d in DAYS, s in SLOTS where day_slot_valid[day[d], s]
 ];
-array[WEEK_SLOTS] of TIME: week_slot_day = [
+array[WEEK_SLOTS] of DAYS: week_slot_day = [
 	d | d in DAYS, s in SLOTS where day_slot_valid[day[d], s]
 ];
 
@@ -112,8 +112,8 @@ constraint
 forall (c1 in COURSES)
 	(forall (c2 in COURSES where c2 > c1)
 		% overlap
-		(week_slot_day[course_slot[c1]] = week_slot_day[course_slot[c2]] /\
-		week_slot_start_time[course_slot[c1]] + week_slot_duration[course_slot[c1]]
+		%% TODO: use disjunctive
+		(week_slot_start_time[course_slot[c1]] + week_slot_duration[course_slot[c1]]
 				> week_slot_start_time[course_slot[c2]] /\
 		week_slot_start_time[course_slot[c2]] + week_slot_duration[course_slot[c2]]
 				> week_slot_start_time[course_slot[c1]]
@@ -129,8 +129,7 @@ constraint
 forall (c1 in COURSES)
 	(forall (c2 in COURSES where c2 > c1)
 		% overlap
-		(week_slot_day[course_slot[c1]] = week_slot_day[course_slot[c2]] /\
-		 week_slot_start_time[course_slot[c1]] + week_slot_duration[course_slot[c1]]
+		(week_slot_start_time[course_slot[c1]] + week_slot_duration[course_slot[c1]]
 				> week_slot_start_time[course_slot[c2]] /\
 		 week_slot_start_time[course_slot[c2]] + week_slot_duration[course_slot[c2]]
 				> week_slot_start_time[course_slot[c1]]
@@ -170,7 +169,8 @@ array[teacher, DAYS] of var TIME: teacher_day_amplitude;
 constraint
 forall (t in teacher, d in DAYS)
 	(teacher_day_begin_time[t, d] = H_null -
-		max([(H_null - week_slot_start_time[s]) * (week_slot_day[s] = d /\ teacher_slot[t, s])
+		max([(week_slot_day[s] * H_null - week_slot_start_time[s])
+			* (week_slot_day[s] = d /\ teacher_slot[t, s])
 			| s in WEEK_SLOTS]));
 
 % Compute the last course + duration in each day for every teacher. When a teached has no
@@ -178,7 +178,9 @@ forall (t in teacher, d in DAYS)
 constraint
 forall (t in teacher, d in DAYS)
 	(teacher_day_end_time[t, d] =
-		max([(week_slot_start_time[s] + week_slot_duration[s]) * (week_slot_day[s] = d /\ teacher_slot[t, s])
+		max([(week_slot_start_time[s] + week_slot_duration[s]
+				- (week_slot_day[s] - 1) * H_null)
+			* (week_slot_day[s] = d /\ teacher_slot[t, s])
 			| s in WEEK_SLOTS]));
 
 % Compute time amplitude in a worked day for every teacher. When teacher does

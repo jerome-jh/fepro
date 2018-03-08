@@ -8,17 +8,14 @@ import numpy as np
 def debug(*args):
     print(*args, file=sys.stderr)
 
-def to_time(s):
-    i = int(s)
-    h = i // 100
-    m = int((i % 100) * 60 / 100)
-    return datetime.time(hour = h, minute = m)
-
 def to_timedelta(s):
+    """ Convert internal time in 100th of hours into a python timedelta """
     i = int(s)
-    h = i // 100
+    ## Day starts at one in model
+    d = 1 + i // 2400
+    h = (i % 2400) // 100
     m = int((i % 100) * 60 / 100)
-    return datetime.timedelta(hours = h, minutes = m)
+    return datetime.timedelta(days = d, hours = h, minutes = m)
 
 class html_output:
     def __init__(self, f):
@@ -168,14 +165,19 @@ class Courses:
         self.N = n_courses[0]
         for att, arg in zip(Courses.attributes, args):
             setattr(self, att, arg)
+        ## Check days consistency
+        d = [ t.days for t in self.start_time ]
+        assert(np.all(d == self.day))
+        ## Remove day offset from start_time
+        d = map(lambda d: datetime.timedelta(days=d), d)
+        d = np.asarray(list(d), dtype='O')
+        self.start_time = self.start_time - d
         ## Compute end times and store them
         self.end_time = self.start_time + self.duration
         ## All known times, start and end
         self.time = np.concatenate((self.start_time, self.end_time))
         ## Caching dictionnary for attributes unique values
         self.unique = dict()
-        #debug(self.N)
-        #debug(self.teacher)
 
     def parse(f):
         regout = re.compile(r"^(\w+)\s*=\s*\[([\w\s,]*)\]\s*;$")
@@ -207,8 +209,6 @@ class Courses:
             t = Courses.input_dict[n]
             if t == int:
                 globals()[n] = np.asarray(v, dtype='i4')
-            elif t == to_time:
-                globals()[n] = np.asarray(v, dtype='O')
             elif t == to_timedelta:
                 globals()[n] = np.asarray(v, dtype='O')
             elif t == str:
