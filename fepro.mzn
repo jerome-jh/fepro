@@ -104,36 +104,36 @@ array[teacher, WEEK_SLOTS] of var bool: teacher_slot;
 % Constraints
 %
 
+include "globals.mzn";
+
 % A teacher can only teach the subjects he/she knows
 constraint forall(c in COURSES) (teacher_subject[course_teacher[c]] = course_subject[c]);
 
 % A teacher can only teach one course at a time
 constraint
-forall (c1 in COURSES)
-	(forall (c2 in COURSES where c2 > c1)
-		% overlap
-		%% TODO: use disjunctive
-		(week_slot_start_time[course_slot[c1]] + week_slot_duration[course_slot[c1]]
-				> week_slot_start_time[course_slot[c2]] /\
-		week_slot_start_time[course_slot[c2]] + week_slot_duration[course_slot[c2]]
-				> week_slot_start_time[course_slot[c1]]
-		-> course_teacher[c1] != course_teacher[c2]));
+forall (t in teacher) (
+	disjunctive(
+		[week_slot_start_time[course_slot[c]]
+			| c in COURSES where course_teacher[c] = t],
+		[week_slot_duration[course_slot[c]] * (course_teacher[c] = t)
+			| c in COURSES])
+);
 
 % Map courses to slots
 constraint
 forall (c in COURSES) (week_slot_duration[course_slot[c]] = course_duration[c]);
 
 % A class cannot have two courses at the same time
-%TODO: is this actually required
 constraint
-forall (c1 in COURSES)
-	(forall (c2 in COURSES where c2 > c1)
-		% overlap
-		(week_slot_start_time[course_slot[c1]] + week_slot_duration[course_slot[c1]]
-				> week_slot_start_time[course_slot[c2]] /\
-		 week_slot_start_time[course_slot[c2]] + week_slot_duration[course_slot[c2]]
-				> week_slot_start_time[course_slot[c1]]
-		-> course_level[c1] != course_level[c2] \/ course_class[c1] != course_class[c2]));
+forall (l in level, cl in 1..level_classes[l]) (
+	disjunctive(
+		[week_slot_start_time[course_slot[c]]
+			| c in COURSES
+			where (course_level[c] = l /\ course_class[c] = cl)],
+		[week_slot_duration[course_slot[c]]
+			| c in COURSES
+			where (course_level[c] = l /\ course_class[c] = cl)])
+);
 
 % No twice the same subject per day for a single class
 constraint
