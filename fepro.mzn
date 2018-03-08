@@ -3,7 +3,8 @@
 %
 
 % Time is in base 100
-set of int: TIME = 0..max(DAYS)*2400;
+int: MAX_TIME = max(DAYS)*2400;
+set of int: TIME = 0..MAX_TIME;
 TIME: H_null = 2400;
 % Times slots: first element is start time, second element is duration
 set of int: SLOTS;
@@ -160,12 +161,14 @@ array[teacher, DAYS] of var TIME: teacher_day_end_time;
 array[teacher, DAYS] of var TIME: teacher_day_amplitude;
 
 % Compute the first course in each day for every teacher. When a teacher has no
-% course that day, result is H_null (2400)
+% course that day, result is MAX_TIME
 constraint
 forall (t in teacher, d in DAYS)
-	(teacher_day_begin_time[t, d] = H_null -
-		max([(week_slot_day[course_slot[c]] * H_null - week_slot_start_time[course_slot[c]])
-			* (course_teacher[c] = t /\ week_slot_day[course_slot[c]] = d)
+	(teacher_day_begin_time[t, d] =
+		min([ if course_teacher[c] = t /\ week_slot_day[course_slot[c]] = d
+			then week_slot_start_time[course_slot[c]]
+			else MAX_TIME
+			endif
 			| c in COURSES]));
 
 % Compute the last course + duration in each day for every teacher. When a teacher has no
@@ -173,8 +176,7 @@ forall (t in teacher, d in DAYS)
 constraint
 forall (t in teacher, d in DAYS)
 	(teacher_day_end_time[t, d] =
-		max([(week_slot_start_time[course_slot[c]] + week_slot_duration[course_slot[c]]
-				- (week_slot_day[course_slot[c]] - 1) * H_null)
+		max([(week_slot_start_time[course_slot[c]] + week_slot_duration[course_slot[c]])
 			* (course_teacher[c] = t /\ week_slot_day[course_slot[c]] = d)
 			| c in COURSES]));
 
@@ -182,7 +184,8 @@ forall (t in teacher, d in DAYS)
 % not work, result is 0
 constraint
 forall (t in teacher, d in DAYS)
-	(teacher_day_amplitude[t, d] = (teacher_day_begin_time[t, d] != H_null) * (teacher_day_end_time[t, d] - teacher_day_begin_time[t, d]));
+	(teacher_day_amplitude[t, d] = (teacher_day_end_time[t, d] - teacher_day_begin_time[t, d])
+					* (teacher_day_begin_time[t, d] != MAX_TIME));
 
 % Objective 1: minimize total worked days
 % Objective 2: minimize total day amplitudes, hence minimize 'holes'
