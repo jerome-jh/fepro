@@ -106,8 +106,6 @@ array[COURSES] of CLASS_SUBJECTS: course_class_subject = [
 
 % Every course must be assigned to a slot: here is the mapping
 array[COURSES] of var WEEK_SLOTS: course_slot;
-% Every course must have a teacher: here is the mapping
-array[COURSES] of var teacher: course_teacher;
 % Every (class, subject) must have a teacher
 array[CLASS_SUBJECTS] of var teacher: class_subject_teacher;
 
@@ -116,10 +114,14 @@ array[CLASS_SUBJECTS] of var teacher: class_subject_teacher;
 %
 
 % A teacher can only teach the subjects he/she knows
-constraint forall(c in COURSES) (teacher_subject[course_teacher[c]] = class_subject_subject[course_class_subject[c]]);
 constraint forall(cl in CLASS_SUBJECTS) (teacher_subject[class_subject_teacher[cl]] = class_subject_subject[cl]);
 
+% Map courses to slots
+constraint
+forall (c in COURSES) (week_slot_duration[course_slot[c]] = course_duration[c]);
+
 % A teacher can only teach one course at a time
+% A class cannot have two courses at the same time
 constraint
 forall (c1 in COURSES)
 	(forall (c2 in COURSES where c2 > c1)
@@ -128,23 +130,8 @@ forall (c1 in COURSES)
 				> week_slot_start_time[course_slot[c2]] /\
 		week_slot_start_time[course_slot[c2]] + week_slot_duration[course_slot[c2]]
 				> week_slot_start_time[course_slot[c1]]
-		-> course_teacher[c1] != course_teacher[c2]));
-
-% Map courses to slots
-constraint
-forall (c in COURSES) (week_slot_duration[course_slot[c]] = course_duration[c]);
-
-% A class cannot have two courses at the same time
-% TODO: merge with course_teacher constraint
-constraint
-forall (c1 in COURSES)
-	(forall (c2 in COURSES where c2 > c1)
-		% overlap
-		(week_slot_start_time[course_slot[c1]] + week_slot_duration[course_slot[c1]]
-				> week_slot_start_time[course_slot[c2]] /\
-		 week_slot_start_time[course_slot[c2]] + week_slot_duration[course_slot[c2]]
-				> week_slot_start_time[course_slot[c1]]
-		-> class_subject_class[course_class_subject[c1]] != class_subject_class[course_class_subject[c2]]));
+		-> class_subject_class[course_class_subject[c1]] != class_subject_class[course_class_subject[c2]] /\
+			class_subject_teacher[course_class_subject[c1]] != class_subject_teacher[course_class_subject[c2]]));
 
 % No twice the same subject per day for a single class
 constraint
@@ -152,15 +139,6 @@ forall (c1 in COURSES)
 	(forall (c2 in COURSES where c2 > c1)
 		(course_class_subject[c1] = course_class_subject[c2]
 		-> week_slot_day[course_slot[c1]] != week_slot_day[course_slot[c2]]));
-
-% A class should have a single teacher for a given subject
-constraint
-forall (c1 in COURSES)
-	(forall (c2 in COURSES where c2 > c1)
-		(course_class_subject[c1] = course_class_subject[c2]
-		-> course_teacher[c1] == course_teacher[c2]));
-
-% TODO: channel class_subject and teacher
 
 % TODO: Teacher cannot teach less than a certain amount
 % TODO: Teacher cannot teach more than a certain amount
@@ -175,7 +153,7 @@ array[teacher, DAYS] of var TIME: teacher_day_amplitude;
 constraint
 forall (t in teacher, d in DAYS)
 	(teacher_day_begin_time[t, d] =
-		min([ if course_teacher[c] = t /\ week_slot_day[course_slot[c]] = d
+		min([ if class_subject_teacher[course_class_subject[c]] = t /\ week_slot_day[course_slot[c]] = d
 			then week_slot_start_time[course_slot[c]]
 			else MAX_TIME
 			endif
@@ -187,7 +165,7 @@ constraint
 forall (t in teacher, d in DAYS)
 	(teacher_day_end_time[t, d] =
 		max([(week_slot_start_time[course_slot[c]] + week_slot_duration[course_slot[c]])
-			* (course_teacher[c] = t /\ week_slot_day[course_slot[c]] = d)
+			* (class_subject_teacher[course_class_subject[c]] = t /\ week_slot_day[course_slot[c]] = d)
 			| c in COURSES]));
 
 % Compute time amplitude in a worked day for every teacher. When teacher does
@@ -210,7 +188,7 @@ output [
 	"course_day = ", show([week_slot_day[course_slot[c]] | c in COURSES]), ";\n",
 	"course_start_time = ", show([week_slot_start_time[course_slot[c]] | c in COURSES]), ";\n",
 	"course_duration = ", show([course_duration[c] | c in COURSES]), ";\n",
-	"teacher = ", show([course_teacher[c] | c in COURSES]), ";\n",
+	"teacher = ", show([class_subject_teacher[course_class_subject[c]] | c in COURSES]), ";\n",
 	"teacher_day_begin_time = \(teacher_day_begin_time)", ";\n",
 	"teacher_day_end_time = \(teacher_day_end_time)", ";\n",
 	"teacher_day_amplitude = \(teacher_day_amplitude)", ";\n",
