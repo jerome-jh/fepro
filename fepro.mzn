@@ -25,7 +25,8 @@ enum subject;
 % Map level and subject to number of hours there are taught
 set of int: DURATIONS;
 array[DURATIONS, int] of TIME: duration_types;
-array[level, subject] of DURATIONS: level_subject_duration;
+% TODO: dataset for duration value
+array[level, subject] of int: level_subject_duration;
 % Number of classes per level
 array[level] of int: level_classes;
 
@@ -61,6 +62,26 @@ array[WEEK_SLOTS] of DAYS: week_slot_day = [
 	d | d in DAYS, s in SLOTS where day_slot_valid[day[d], s]
 ];
 
+% Give a unique identifier to every (class, subject)
+int: MAX_CLASS_SUBJECTS = sum(level_classes) * max(subject);
+set of int: CLASS_SUBJECTS = 1..MAX_CLASS_SUBJECTS;
+array[CLASS_SUBJECTS] of level: class_subject_level = [
+	l
+	| l in level, c in 1..level_classes[l], s in subject
+];
+array[CLASS_SUBJECTS] of int: class_subject_class = [
+	c
+	| l in level, c in 1..level_classes[l], s in subject
+];
+array[CLASS_SUBJECTS] of int: class_subject_subject = [
+	s
+	| l in level, c in 1..level_classes[l], s in subject
+];
+array[CLASS_SUBJECTS] of DURATIONS: class_subject_duration = [
+	level_subject_duration[l, s]
+	| l in level, c in 1..level_classes[l], s in subject
+];
+
 % Let's introduce the notion of course.
 % Index set for courses
 set of int: COURSES = 1 .. sum(
@@ -68,27 +89,16 @@ set of int: COURSES = 1 .. sum(
 		sum([duration_types[level_subject_duration[l, s], i] != 0 | s in subject, i in index_set_2of2(duration_types)]) | l in level]
 );
 array[COURSES] of TIME: course_duration = [
-	duration_types[level_subject_duration[l, s], d]
-	| l in level, c in 1..level_classes[l], s in subject,
-		d in index_set_2of2(duration_types) where duration_types[level_subject_duration[l, s], d] != 0
+	duration_types[class_subject_duration[cs], d]
+	| cs in CLASS_SUBJECTS,
+		d in index_set_2of2(duration_types) where duration_types[class_subject_duration[cs], d] != 0
 ];
-array[COURSES] of subject: course_subject = [
-	s
-	| l in level, c in 1..level_classes[l], s in subject,
-		d in index_set_2of2(duration_types) where duration_types[level_subject_duration[l, s], d] != 0
-];
-array[COURSES] of level: course_level = [
-	l
-	| l in level, c in 1..level_classes[l], s in subject,
-		d in index_set_2of2(duration_types) where duration_types[level_subject_duration[l, s], d] != 0
-];
-array[COURSES] of int: course_class = [
-	c
-	| l in level, c in 1..level_classes[l], s in subject,
-		d in index_set_2of2(duration_types) where duration_types[level_subject_duration[l, s], d] != 0
+array[COURSES] of CLASS_SUBJECTS: course_class_subject = [
+	cs
+	| cs in CLASS_SUBJECTS,
+		d in index_set_2of2(duration_types) where duration_types[class_subject_duration[cs], d] != 0
 ];
 %constraint assert(false, "\(card(index_set_2of2(duration_types))) \(card(COURSES)) != \(length(course_duration)) \(course_duration)");
-%constraint assert(false, "\(course_valid)\n\(course_duration)\n\(course_subject)");
 
 %
 % Variables
@@ -98,20 +108,22 @@ array[COURSES] of int: course_class = [
 array[COURSES] of var WEEK_SLOTS: course_slot;
 % Every course must have a teacher: here is the mapping
 array[COURSES] of var teacher: course_teacher;
+% Every (class, subject) must have a teacher
+array[CLASS_SUBJECTS] of var teacher: class_subject_teacher;
 
 %
 % Constraints
 %
 
 % A teacher can only teach the subjects he/she knows
-constraint forall(c in COURSES) (teacher_subject[course_teacher[c]] = course_subject[c]);
+constraint forall(c in COURSES) (teacher_subject[course_teacher[c]] = class_subject_subject[course_class_subject[c]]);
+constraint forall(cl in CLASS_SUBJECTS) (teacher_subject[class_subject_teacher[cl]] = class_subject_subject[cl]);
 
 % A teacher can only teach one course at a time
 constraint
 forall (c1 in COURSES)
 	(forall (c2 in COURSES where c2 > c1)
 		% overlap
-		%% TODO: use disjunctive
 		(week_slot_start_time[course_slot[c1]] + week_slot_duration[course_slot[c1]]
 				> week_slot_start_time[course_slot[c2]] /\
 		week_slot_start_time[course_slot[c2]] + week_slot_duration[course_slot[c2]]
@@ -123,7 +135,7 @@ constraint
 forall (c in COURSES) (week_slot_duration[course_slot[c]] = course_duration[c]);
 
 % A class cannot have two courses at the same time
-%TODO: is this actually required
+% TODO: merge with course_teacher constraint
 constraint
 forall (c1 in COURSES)
 	(forall (c2 in COURSES where c2 > c1)
@@ -132,25 +144,23 @@ forall (c1 in COURSES)
 				> week_slot_start_time[course_slot[c2]] /\
 		 week_slot_start_time[course_slot[c2]] + week_slot_duration[course_slot[c2]]
 				> week_slot_start_time[course_slot[c1]]
-		-> course_level[c1] != course_level[c2] \/ course_class[c1] != course_class[c2]));
+		-> class_subject_class[course_class_subject[c1]] != class_subject_class[course_class_subject[c2]]));
 
 % No twice the same subject per day for a single class
 constraint
 forall (c1 in COURSES)
 	(forall (c2 in COURSES where c2 > c1)
-		(course_subject[c1] = course_subject[c2] /\
-		 course_level[c1] = course_level[c2] /\
-	         course_class[c1] = course_class[c2]
+		(course_class_subject[c1] = course_class_subject[c2]
 		-> week_slot_day[course_slot[c1]] != week_slot_day[course_slot[c2]]));
 
 % A class should have a single teacher for a given subject
 constraint
 forall (c1 in COURSES)
 	(forall (c2 in COURSES where c2 > c1)
-		(course_subject[c1] = course_subject[c2] /\
-		 course_level[c1] = course_level[c2] /\
-	         course_class[c1] = course_class[c2]
+		(course_class_subject[c1] = course_class_subject[c2]
 		-> course_teacher[c1] == course_teacher[c2]));
+
+% TODO: channel class_subject and teacher
 
 % TODO: Teacher cannot teach less than a certain amount
 % TODO: Teacher cannot teach more than a certain amount
@@ -196,9 +206,7 @@ var int: obj =  total_amplitude;
 solve minimize obj;
 %solve satisfy;
 output [
-	"course_level = ", show([course_level[c] | c in COURSES]), ";\n",
-	"course_class = ", show([course_class[c] | c in COURSES]), ";\n",
-	"course_subject = ", show([course_subject[c] | c in COURSES]), ";\n",
+	"course_class_subject = ", show([course_class_subject[c] | c in COURSES]), ";\n",
 	"course_day = ", show([week_slot_day[course_slot[c]] | c in COURSES]), ";\n",
 	"course_start_time = ", show([week_slot_start_time[course_slot[c]] | c in COURSES]), ";\n",
 	"course_duration = ", show([course_duration[c] | c in COURSES]), ";\n",
