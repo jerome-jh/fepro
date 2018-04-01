@@ -9,6 +9,8 @@ TIME: H_null = 2400;
 % Times slots: first element is start time, second element is duration
 set of int: SLOTS;
 array[SLOTS, 1..2] of TIME: slot;
+% Slot overlap matrix
+array[SLTS, SLOTS] of bool: overlap;
 % Days have various hour configurations: this is the number of different
 % configurations
 set of int: DAY_TYPES;
@@ -62,31 +64,41 @@ array[WEEK_SLOTS] of DAYS: week_slot_day = [
 	d | d in DAYS, s in SLOTS where day_slot_valid[day[d], s]
 ];
 
+% Give a unique identifier to every (level, class)
+int: MAX_CLASSES = sum(level_classes);
+set of int: CLASSES = 1..MAX_CLASSES;
+array[CLASSES] of level: class_level = [
+	l
+	| l in level, c in 1..level_classes[l]
+];
+
 % Give a unique identifier to every (class, subject)
-int: MAX_CLASS_SUBJECTS = sum(level_classes) * max(subject);
+%TODO: this works because all classes have all subjects currently
+int: MAX_CLASS_SUBJECTS = MAX_CLASSES * max(subject);
 set of int: CLASS_SUBJECTS = 1..MAX_CLASS_SUBJECTS;
 array[CLASS_SUBJECTS] of level: class_subject_level = [
-	l
-	| l in level, c in 1..level_classes[l], s in subject
+	class_level[cl]
+	| cl in CLASSES, s in subject
 ];
 array[CLASS_SUBJECTS] of int: class_subject_class = [
-	c
-	| l in level, c in 1..level_classes[l], s in subject
+	cl
+	| cl in CLASSES, s in subject
 ];
 array[CLASS_SUBJECTS] of int: class_subject_subject = [
 	s
-	| l in level, c in 1..level_classes[l], s in subject
+	| cl in CLASSES, s in subject
 ];
 array[CLASS_SUBJECTS] of DURATIONS: class_subject_duration = [
-	level_subject_duration[l, s]
-	| l in level, c in 1..level_classes[l], s in subject
+	level_subject_duration[class_level[cl], s]
+	| cl in CLASSES, s in subject
 ];
 
 % Let's introduce the notion of course.
 % Index set for courses
 set of int: COURSES = 1 .. sum(
-	[ level_classes[l] *
-		sum([duration_types[level_subject_duration[l, s], i] != 0 | s in subject, i in index_set_2of2(duration_types)]) | l in level]
+	[ duration_types[class_subject_duration[cs], d] != 0
+	| cs in CLASS_SUBJECTS,
+		d in index_set_2of2(duration_types)]
 );
 array[COURSES] of TIME: course_duration = [
 	duration_types[class_subject_duration[cs], d]
@@ -106,19 +118,42 @@ array[COURSES] of CLASS_SUBJECTS: course_class_subject = [
 
 % Every course must be assigned to a slot: here is the mapping
 array[COURSES] of var WEEK_SLOTS: course_slot;
+% Every course has a class
+array[COURSES] of var CLASSES: course_class;
+% Every course has a teacher
+array[COURSES] of var teacher: course_teacher;
 % Every (class, subject) must have a teacher
 array[CLASS_SUBJECTS] of var teacher: class_subject_teacher;
+%
+array[CLASS_SUBJECTS, WEEK_SLOTS] of var bool: class_subject_slot;
+% Indicate which slot a teacher works
+array[teacher, WEEK_SLOTS] of var bool: teacher_slot;
 
 %
 % Constraints
 %
 
 % A teacher can only teach the subjects he/she knows
-constraint forall(cl in CLASS_SUBJECTS) (teacher_subject[class_subject_teacher[cl]] = class_subject_subject[cl]);
+constraint
+forall(cl in CLASS_SUBJECTS) (teacher_subject[class_subject_teacher[cl]] = class_subject_subject[cl]);
+constraint
+forall(cs in CLASS_SUBJECTS) (
+	forall (s in WEEK_SLOTS) (
+		class_subject_slot[cs, s] -> teacher_slot[class_subject_teacher[cs], s]
+	)
+);
+%constraint
+%forall(t in teacher) (
+%	forall (s in WEEK_SLOTS) (
+%		teacher_slot[t, s] -> exists(
+%	)
+%);
 
 % Map courses to slots
 constraint
 forall (c in COURSES) (week_slot_duration[course_slot[c]] = course_duration[c]);
+constraint
+forall (c in COURSES) (course_teacher[c] = class_subject_teacher[course_class_subject[c]]);
 
 % A teacher can only teach one course at a time
 % A class cannot have two courses at the same time
@@ -130,8 +165,8 @@ forall (c1 in COURSES)
 				> week_slot_start_time[course_slot[c2]] /\
 		week_slot_start_time[course_slot[c2]] + week_slot_duration[course_slot[c2]]
 				> week_slot_start_time[course_slot[c1]]
-		-> class_subject_class[course_class_subject[c1]] != class_subject_class[course_class_subject[c2]] /\
-			class_subject_teacher[course_class_subject[c1]] != class_subject_teacher[course_class_subject[c2]]));
+		-> course_class[c1] != course_class[c2] /\
+			course_teacher[c1] != course_teacher[c2]));
 
 % No twice the same subject per day for a single class
 constraint
