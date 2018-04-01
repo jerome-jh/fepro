@@ -1,0 +1,4 @@
+http://www.cecs.uci.edu/~papers/compendium94-03/papers/2003/dac03/pdffiles/48_3.pdf
+http://minisat.se/downloads/MiniSat+.pdf
+https://www.researchgate.net/profile/Igor_Markov/publication/3049575_Solution_and_Optimization_of_Systems_of_Pseudo-Boolean_Constraints/links/0deec517d7ed438f06000000/Solution-and-Optimization-of-Systems-of-Pseudo-Boolean-Constraints.pdf
+http://imada.sdu.dk/~petersk/papers/TACAS11-optimal-base.pdf
