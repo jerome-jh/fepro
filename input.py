@@ -435,21 +435,21 @@ class MznBuild:
     def teacher_day(self):
         ## Minimize total days worked
         NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
-        cl = ''
+        clause = ''
         for t, d in self.day:
-            cl += 'constraint %s ='%self.day.name(t,d)
+            cl = 'constraint not %s'%self.day.name(t,d)
             delim = ' '
             for s, c in it.product(range(NS), range(NC)):
                 if self.pb.slot_day[s, d]:
-                    cl += delim + '%s'%self.var.name(t,c,s)
-                    delim = ' \/ '
+                    cl += ' \/ ' + '%s'%self.var.name(t,c,s)
+                    cl2 = 'constraint not %s \/ %s;\n'%(self.var.name(t,c,s), self.day.name(t,d))
+                    clause += cl2
             cl += ';\n'
-        cld = 'array[1..%d] of var bool: d;\n'%self.day.cardinal()
-        cld += cl
-        cld += 'var 0..%d: n_day;\nconstraint n_day = sum(d);\n'%self.day.cardinal()
-        debug(cl.count('\n'), 'day clauses')
-        debug(cl.count('\/') + 3, 'variables in day clauses')
-        return cld
+        clause += cl
+        clause = 'array[1..%d] of var bool: d;\n'%self.day.cardinal() + clause
+        clause += 'var 0..%d: n_day;\nconstraint n_day = sum(d);\n'%self.day.cardinal()
+        debug(clause.count('\n') - 2, 'day clauses')
+        return clause
 
     def __str__(self):
         return self.mzn
@@ -569,7 +569,7 @@ if __name__ == '__main__':
     if 1:
         sol = sat.solve.solve(sol.cnf, a=True)
         debug('%d solutions'%len(sol))
-        if 1:
+        if 0:
             debug(sol)
 
     v = Variable((4, 2, 2))
