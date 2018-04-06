@@ -4,6 +4,8 @@ import itertools as it
 import s_expression.s_expression as se
 from collections import OrderedDict
 import sat.solve
+import sat.build
+import mzn.build
 
 np.set_printoptions(threshold=np.nan)
 
@@ -44,15 +46,6 @@ def merge_dict(d1, d2):
         d1. """
     for k, v in d2.items():
         d1[k] = v
-
-def mextend(l, iter_of_iter):
-    for i in iter_of_iter:
-        l.extend(i)
-
-def mcat(s, iter_of_str):
-    for i in iter_of_str:
-        s += i
-    return s
 
 class Problem:
     def __init__(self):
@@ -161,10 +154,10 @@ class Problem:
     def comp_slot_overlap_2(self):
         N = self.n_slot
         overlap = np.zeros((N,N), dtype='b')
-        for i, j in it.product(range(N), range(N)):
-            if i == j:
-                ## A slot is not considered overlapping with itself
-                continue
+        for i, j in it.combinations(range(N), 2):
+            #if i == j:
+            #    ## A slot is not considered overlapping with itself
+            #    continue
             if self.slot[i]['day'] != self.slot[j]['day']:
                 ## Slots cannot overlap from one day to another
                 continue
@@ -178,6 +171,31 @@ class Problem:
                  overlap[j,i] = True
         assert(overlap.shape == self.slot_overlap.shape)
         assert(np.all(overlap == self.slot_overlap))
+
+    def comp_slot_order(self):
+        """ Build the slot ordering matrix. Slots are only ordered within a
+        single day. Slots that overlap are not ordered.
+        slot_order[i,j] == True iff slot i is before slot j
+                                iff slot j is after slot i"""
+        N = self.n_slot
+        slot_order = np.zeros((N, N), dtype='b')
+        for s1, s2 in it.combinations(range(N), 2):
+            if self.slot[s1]['day'] != self.slot[s2]['day']:
+                ## Slots are in different days: we only order slots within a day
+                continue
+            if self.slot_overlap[s1, s2]:
+                ## Overlapping slots are not ordered, since typically they are
+                ## mutually excluded for a single teacher or a single group
+                continue
+            ## Start times cannot be equal here otherwise slots would overlap
+            if self.slot[s1]['start_time'] < self.slot[s2]['start_time']:
+                ## s1 is before s2
+                slot_order[s1, s2] = True
+            else:
+                ## s2 is before s1
+                slot_order[s2, s1] = True
+        self.slot_order = slot_order
+        #debug(slot_order)
 
     def comp_teacher_subject(self):
         """ Build the teacher to subject matrix """
@@ -256,6 +274,7 @@ class Problem:
         self.comp_slot_day()
         self.comp_slot_overlap()
         self.comp_slot_overlap_2()
+        self.comp_slot_order()
         self.comp_teacher_subject()
         self.comp_course()
         self.comp_course_slot()
@@ -270,263 +289,6 @@ class Problem:
 
     def __str__(self):
         return '\n'.join((str(self.teacher), str(self.level), str(self.day_type), str(self.day), str(self.group)))
-
-class SatBuild:
-    def __init__(self, problem):
-        self.pb = problem
-        self.var = SatVariable((pb.n_teacher, pb.n_course, pb.n_slot))
-        cnf = list()
-        mextend(cnf, self.forall())
-        mextend(cnf, self.overlap())
-        cnf.extend(self.all_course())
-        cnf.extend(self.at_most_one())
-        self.cnf = cnf
-        debug(self.var.cardinal(), 'variables')
-        debug(len(cnf), 'total clauses')
-
-    def all_course(self):
-        ## All courses must happen, whatever teacher or slot
-        pb = self.pb
-        clause = list()
-        NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
-        for c in range(NC):
-            cl = list()
-            for t, s in it.product(range(NT), range(NS)):
-                cl.append(self.var.number(t, c, s))
-            clause.append(cl)
-        debug(len(clause), 'clauses all courses')
-        assert(len(clause) == NC)
-        return clause
-
-    def forall(self):
-        cl_ts = list()
-        cl_cd = list()
-        for t, c, s in self.var:
-            ## Teacher teaches the subject he/she knows
-            if not pb.course_teacher[c, t]:
-                cl_ts.append([-self.var.number(t,c,s)])
-            ## course duration and slot duration must match
-            if not pb.course_slot[c, s]:
-                cl_cd.append([-self.var.number(t,c,s)])
-        debug(len(cl_ts), 'clauses teacher - subject mapping')
-        debug(len(cl_cd), 'clauses course duration - slot duration mapping')
-        return (cl_ts, cl_cd)
-
-    def overlap(self):
-        cl_to = list()
-        cl_go = list()
-        NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
-        for s1, s2 in it.product(range(NS), range(NS)):
-            ## overlap[s][s] is always false
-            if self.pb.slot_overlap[s1][s2]:
-                ## Teacher slots cannot overlap
-                for t, c1, c2 in it.product(range(NT), range(NC), range(NC)):
-                    cl_to.append([-self.var.number(t, c1, s1), -self.var.number(t, c2, s2)])
-                ## Class slots cannot overlap
-                for c, t1, t2 in it.product(range(NC), range(NT), range(NT)):
-                    cl_go.append([-self.var.number(t1, c, s1), -self.var.number(t2, c, s2)])
-        debug(len(cl_to), 'clauses teacher no overlap')
-        debug(len(cl_go), 'clauses class no overlap')
-        return (cl_to, cl_go)
-
-    def at_most_one(self):
-        ## A course must only be given once
-        clause = list()
-        NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
-        for c in range(NC):
-            for t1, s1, t2, s2 in it.product(range(NT), range(NS), range(NT), range(NS)):
-                if t1 != t2 or s1 != s2:
-                    clause.append([-self.var.number(t1, c, s1), -self.var.number(t2, c, s2)])
-        debug(len(clause), 'clauses courses only once')
-        return clause
-
-    def to_dimacs(self):
-        ## Conjunction of all the constraints
-        N = len(self.cnf)
-        s = 'p cnf ' + str(self.var.cardinal()) + ' ' + str(N) + '\n'
-        for i in range(N):
-            cl = self.cnf[i]
-            for j in range(len(cl)):
-                s += str(cl[j]) + ' '
-            s += '0\n'
-        return s
-
-    def __str__(self):
-        return self.to_dimacs()
-
-class MznBuild:
-    def __init__(self, problem):
-        self.pb = problem
-        self.var = MznVariable((pb.n_teacher, pb.n_course, pb.n_slot))
-        mzn = ''
-        mzn += 'int: NVAR = %d;\n'%self.var.cardinal()
-        mzn += 'array[1..NVAR] of var bool: x;\n'
-        ## Satisfaction constraints
-        mzn = mcat(mzn, self.forall())
-        mzn = mcat(mzn, self.overlap())
-        mzn += self.all_course()
-        mzn += self.at_most_one()
-        ## Optimizing constraints
-        self.day = MznVariable((pb.n_teacher, pb.n_day), prefix='d')
-        mzn += self.teacher_day()
-        #self.mzn = mzn + 'solve satisfy;\n'
-        self.mzn = mzn + 'solve minimize n_day;\n'
-        debug(self.var.cardinal(), 'variables')
-        debug(mzn.count('\n') - 2, 'total clauses')
-
-    def all_course(self):
-        ## All courses must happen, whatever teacher or slot
-        pb = self.pb
-        clause = ''
-        NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
-        for c in range(NC):
-            cl = 'constraint'
-            delim = ' '
-            for t, s in it.product(range(NT), range(NS)):
-                cl += delim + '%s'%self.var.name(t, c, s)
-                delim = ' \/ '
-            cl += ';\n'
-            clause += cl
-        debug(clause.count('\n'), 'clauses all courses')
-        return clause
-
-    def forall(self):
-        cl_ts = ''
-        cl_cd = ''
-        for t, c, s in self.var:
-            ## Teacher teaches the subject he/she knows
-            if not pb.course_teacher[c, t]:
-                cl_ts += 'constraint not %s;\n'%self.var.name(t,c,s)
-            ## course duration and slot duration must match
-            if not pb.course_slot[c, s]:
-                cl_cd += 'constraint not %s;\n'%self.var.name(t,c,s)
-        debug(cl_ts.count('\n'), 'clauses teacher - subject mapping')
-        debug(cl_cd.count('\n'), 'clauses course duration - slot duration mapping')
-        return (cl_ts, cl_cd)
-
-    def overlap(self):
-        cl_to = ''
-        cl_go = ''
-        NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
-        for s1, s2 in it.product(range(NS), range(NS)):
-            ## overlap[s][s] is always false
-            if self.pb.slot_overlap[s1][s2]:
-                ## Teacher slots cannot overlap
-                for t, c1, c2 in it.product(range(NT), range(NC), range(NC)):
-                    cl_to += 'constraint not %s \/ not %s;\n'%(self.var.name(t, c1, s1), self.var.name(t, c2, s2))
-                ## Class slots cannot overlap
-                for c, t1, t2 in it.product(range(NC), range(NT), range(NT)):
-                    cl_go += 'constraint not %s \/ not %s;\n'%(self.var.name(t1, c, s1), self.var.name(t2, c, s2))
-        debug(cl_to.count('\n'), 'clauses teacher no overlap')
-        debug(cl_go.count('\n'), 'clauses class no overlap')
-        return (cl_to, cl_go)
-
-    def at_most_one(self):
-        ## A course must only be given once
-        clause = ''
-        NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
-        for c in range(NC):
-            for t1, s1, t2, s2 in it.product(range(NT), range(NS), range(NT), range(NS)):
-                if t1 != t2 or s1 != s2:
-                    clause += 'constraint not %s \/ not %s;\n'%(self.var.name(t1, c, s1), self.var.name(t2, c, s2))
-        debug(clause.count('\n'), 'clauses courses only once')
-        return clause
-
-    def teacher_day(self):
-        ## Minimize total days worked
-        NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
-        clause = ''
-        for t, d in self.day:
-            cl = 'constraint not %s'%self.day.name(t,d)
-            delim = ' '
-            for s, c in it.product(range(NS), range(NC)):
-                if self.pb.slot_day[s, d]:
-                    cl += ' \/ ' + '%s'%self.var.name(t,c,s)
-                    cl2 = 'constraint not %s \/ %s;\n'%(self.var.name(t,c,s), self.day.name(t,d))
-                    clause += cl2
-            cl += ';\n'
-        clause += cl
-        clause = 'array[1..%d] of var bool: d;\n'%self.day.cardinal() + clause
-        clause += 'var 0..%d: n_day;\nconstraint n_day = sum(d);\n'%self.day.cardinal()
-        debug(clause.count('\n') - 2, 'day clauses')
-        return clause
-
-    def __str__(self):
-        return self.mzn
-
-class Variable:
-    def __init__(self, vect, prefix='x', offset=0):
-        """ vect[0] is the slower varying index, vect[N-1] the faster varying index """
-        N = len(vect)
-        base = np.ndarray((N+1,), dtype='u4')
-        base[0] = 1
-        base[1:] = np.flipud(np.asarray(vect, dtype='u4'))
-        self.base = np.flipud(np.cumprod(base, dtype='u4'))
-        self.vect = vect
-        self.offset = offset
-
-    def cardinal(self):
-        return self.base[0]
-
-    def vnumber(self, vect):
-        assert(len(vect) == len(self.vect))
-        return np.dot(self.base[1:], vect) + self.offset
-
-    def number(self, *args):
-        return self.vnumber(args)
-
-    def vname(self, vect):
-        return self.prefix + str(super.vnumber(vect))
-
-    def name(self, *args):
-        return self.vname(args)
-
-    def index(self, n):
-        assert(n >= self.offset and n < self.offset + v.cardinal())
-        N = self.base.shape[0]-1
-        idx = np.ndarray((N,), dtype='u4')
-        n -= self.offset
-        for i in range(N-1, -1, -1):
-            idx[i] = n % self.vect[i]
-            n = (n - idx[i]) // self.vect[i]
-        return idx
-
-    def __iter__(self):
-        """ Iterate other indices """
-        return it.product(*map(range, self.vect))
-
-    def check(self):
-        """ Debug function: check consistency of self.index and self.number """
-        i = self.offset
-        for tu in self:
-            assert(self.vnumber(tu) == i)
-            i += 1
-        tu = iter(self)
-        for i in range(self.offset, self.offset + self.cardinal()):
-            assert(np.all(self.index(i) == np.asarray(tu.__next__(), dtype='u4')))
-
-    def debug(self):
-        for i,j,k in v:
-            debug((i,j,k),v.number(i,j,k))
-        for n in range(self.offset, self.offset + v.cardinal()):
-            debug(n,v.index(n))
-
-class SatVariable(Variable):
-    def __init__(self, vect):
-        super().__init__(vect, offset=1, prefix='')
-
-    def vnumber(self, vect):
-        assert(len(vect) == len(self.vect))
-        ## Convert to Python int (otherwise this is a Numpy int)
-        return int(np.dot(self.base[1:], vect) + self.offset)
-
-class MznVariable(Variable):
-    def __init__(self, vect, prefix='x'):
-        super().__init__(vect, offset=1, prefix=prefix)
-        self.prefix = prefix
-
-    def vname(self, vect):
-        return '%s[%d]'%(self.prefix, super().vnumber(vect))
 
 def load_tuple(filename):
     s = open(filename).read(-1)
@@ -551,28 +313,25 @@ if __name__ == '__main__':
         elif e[0] == 'group':
             pb.add_group(e[1:])
     ## TODO: check uniqueness of teacher, level, etc...
+    ## TODO: check no slot with duration == 0
     pb.build()
     #debug(pb)
-    sol = MznBuild(pb)
+    sol = mzn.build.MznBuild(pb)
     s = str(sol)
     f = open('sat.mzn', 'wt')
     f.write(s)
     f.close()
 
-    sol = SatBuild(pb)
+    sol = sat.build.SatBuild(pb)
     #debug(sol.cnf)
     s = str(sol)
     f = open('sat.cnf', 'wt')
     f.write(s)
     f.close()
     
-    if 1:
+    if 0:
         sol = sat.solve.solve(sol.cnf, a=True)
         debug('%d solutions'%len(sol))
         if 0:
             debug(sol)
 
-    v = Variable((4, 2, 2))
-    v.check()
-    v = Variable((4, 2, 2), offset=1)
-    v.check()
