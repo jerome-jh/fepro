@@ -1,5 +1,10 @@
 from copy import *
 
+""" Requires Python >= 3.5, syntax error otherwise """
+#import sys
+#if sys.version_info[0] < 3 or sys.version_info[1] < 5:
+#    print('This module requires at least python3.5')
+
 def AND(*arg):
     assert(len(arg) >= -AND_op.arity)
     return [AND_op, *arg]
@@ -17,9 +22,25 @@ def EQ(a, b):
 def NOT(a):
     return [NOT_op, a]
 
+def CNF(exp):
+    if not Logic.islist(exp):
+        return exp
+    exp = Logic.convert_eq(exp)
+    exp = Logic.convert_imp(exp)
+    exp = Logic.convert_not(exp)
+    if not Logic.islist(exp):
+        return exp
+    #while not Logic.is_cnf(exp):
+    if 1:
+        exp = Logic.distribute_or(exp)
+        exp = Logic.associate_or(exp)
+        exp = Logic.associate_and(exp)
+    return exp
+
 class AND_op:
     arity = -2
     symb = '/\\'
+    wolf_symb = 'And'
     func = AND
     def assoc(e, *arg):
         e.extend(arg)
@@ -27,6 +48,7 @@ class AND_op:
 class OR_op:
     arity = -2
     symb = '\\/'
+    wolf_symb = 'Or'
     func = OR 
     def assoc(self, *args):
         self.arg.extend(args)
@@ -34,29 +56,97 @@ class OR_op:
 class IMP_op:
     arity = 2
     symb = '->'
+    wolf_symb = 'Implies'
     func = IMP
 
 class EQ_op:
     arity = 2
     symb = '='
+    wolf_symb = 'Equivalent'
     func = EQ
 
 class NOT_op:
     arity = 1
     symb = '-'
+    wolf_symb = 'Not'
     func = NOT
 
-def STR(exp):
+def math_str(exp):
+    """ Print exp in usual mathematical notation """
     if Logic.islist(exp):
         op, arg = Logic.lisp(exp)
         if op.arity == 2:
-            return '(' + STR(arg[0]) + ' ' + op.symb + ' ' + STR(arg[1]) + ')'
+            return '(' + math_str(arg[0]) + ' ' + op.symb + ' ' + math_str(arg[1]) + ')'
         elif op.arity == 1:
-            return op.symb + STR(arg[0])
+            return op.symb + math_str(arg[0])
         elif op.arity == -2:
-            s = '(' + STR(arg[0])
+            s = '(' + math_str(arg[0])
             for e in arg[1:]:
-                s += ' ' + op.symb + ' ' + STR(e) 
+                s += ' ' + op.symb + ' ' + math_str(e) 
+            s += ')'
+            return s
+        else:
+            raise Exception('Unexpected arity')
+    else:
+        return str(exp)
+
+def code_str(exp):
+    """ Print exp as equivalent code using this module API """
+    if Logic.islist(exp):
+        op, arg = Logic.lisp(exp)
+        if op.arity == 2:
+            return op.func.__name__ + '(' + code_str(arg[0]) + ',' + code_str(arg[1]) + ')'
+        elif op.arity == 1:
+            return op.func.__name__ + '(' + code_str(arg[0]) + ')'
+        elif op.arity == -2:
+            s = op.func.__name__ + '(' + code_str(arg[0])
+            for e in arg[1:]:
+                s += ',' + code_str(e) 
+            s += ')'
+            return s
+        else:
+            raise Exception('Unexpected arity')
+    else:
+        return str(exp)
+
+def wolf_str(exp):
+    """ Tentative output to the so called Wolfram "language"
+        This is useful for checking validity of the output
+        But the language itself is so picky and unpredictable that careful
+        human inspection is required every time. """
+    if Logic.islist(exp):
+        op, arg = Logic.lisp(exp)
+        if op.arity == 2:
+            return op.wolf_symb + '[' + wolf_str(arg[0]) + ',' + wolf_str(arg[1]) + ']'
+        elif op.arity == 1:
+            return op.wolf_symb + '[' + wolf_str(arg[0]) + ']'
+        elif op.arity == -2:
+            s = op.wolf_symb + '[' + wolf_str(arg[0])
+            for e in arg[1:]:
+                s += ',' + wolf_str(e) 
+            s += ']'
+            return s
+        else:
+            raise Exception('Unexpected arity')
+    else:
+        if (exp < 0):
+            return wolf_str(NOT(-exp))
+        else:
+            return chr(ord('a') + exp - 1)
+            #return 'Symbol["x%d"]'%(exp)
+
+def dimacs_str(exp):
+    ##TODO
+    if Logic.islist(exp):
+        op, arg = Logic.lisp(exp)
+        if op.arity == 2:
+            return '(' + dimacs_str(arg[0]) + ' ' + op.symb + ' ' + dimacs_str(arg[1]) + ')'
+        elif op.arity == 1:
+            return op.symb + dimacs_str(arg[0])
+        elif op.arity == -2:
+            s = '(' + dimacs_str(arg[0])
+            for e in arg[1:]:
+                s += ' ' + op.symb + ' ' + dimacs_str(e) 
             s += ')'
             return s
         else:
@@ -69,10 +159,12 @@ class Logic:
         return type(exp) != type(int())
 
     def lisp(exp):
+        """ This is suboptimal because Python does not support views on lists,
+            so taking a slice actually creates a copy """
         return exp[0], exp[1:]
 
     def convert_eq(exp):
-        """ exp is a list """
+        """ exp must be a list """
         op, arg = Logic.lisp(exp)
         if op.func == EQ:
             a = arg[0]
@@ -89,7 +181,7 @@ class Logic:
             return exp
 
     def convert_imp(exp):
-        """ exp is a list """
+        """ exp must be a list """
         op, arg = Logic.lisp(exp)
         if op.func == IMP:
             a = arg[0]
@@ -106,7 +198,7 @@ class Logic:
             return exp
 
     def convert_not(exp):
-        """ exp is a list """
+        """ exp must be a list """
         op, arg = Logic.lisp(exp)
         if op.func == NOT:
             #assert(len(arg) == 1)
@@ -131,55 +223,40 @@ class Logic:
             return exp
 
     def distribute_or(exp):
-        car, cdr = Logic.lisp(exp)
-        if car.func == OR:
-            for i, e in enumerate(cdr):
+        """ exp must be a list """
+        op, arg = Logic.lisp(exp)
+        if op.func == OR:
+            for i, e in enumerate(arg):
                 if Logic.islist(e):
-                    car, cdr2 = Logic.lisp(e)
-                    if car.func == AND:
+                    op, arg2 = Logic.lisp(e)
+                    if op.func == AND:
                         if i == 0:
                             ## distribute to the left
-                            ai = cdr2
-                            o = cdr[1]
-                            oi = cdr[2:]
-                            if len(oi):
-                                reta = [0] * (1 + len(ai))
-                                reta[0] = AND_op
-                                for i, a in enumerate(ai):
-                                    reta[i+1] = [OR, a, o]
-                                reto = [0] * (2 + len(oi))
-                                reto[0] = OR_op
-                                reto[1] = reta
-                                reto[2:] = oi
-                                return Logic.distribute_or(reto)
+                            ai = arg2
+                            o = arg[1]
+                            of = lambda x: OR(x,o)
+                            oi = arg[2:]
+                            if not len(oi):
+                                return AND(*map(Logic.distribute_or, map(of, ai))) 
                             else:
-                                reta = [0] * (1 + len(ai))
-                                reta[0] = AND_op
-                                for i, a in enumerate(ai):
-                                    reta[i+1] = [OR_op, a, o]
-                                return Logic.distribute_or(reta)
+                                reta = AND(*map(of, ai))
+                                reto = OR(reta, *oi)
+                                return Logic.distribute_or(reto)
                         else:
                             ## distribute to the right
-                            o = cdr[0:i]
-                            oi = cdr[i+1:]
-                            ai = cdr2
-                            print(i, o, oi, ai)
-                            reta = [0] * (1 + len(ai))
-                            for i, a in enumerate(ai):
-                                reta[i+1] = [OR_op, *o, a]
-                            if len(oi):
-                                reto = [0] * (2 + len(oi))
-                                reto[0] = OR_op
-                                reto[1] = reta
-                                reto[2:] = oi
-                                print(reto)
-                                return Logic.distribute_or(reto)
+                            o = arg[0:i]
+                            ai = arg2
+                            of = lambda x: OR(*o,x)
+                            oi = arg[i+1:]
+                            if not len(oi):
+                                return AND(*map(Logic.distribute_or, map(of, ai)))
                             else:
-                                print(reta)
-                                return Logic.distribute_or(reta)
+                                reta = AND(*map(of, ai))
+                                reto = OR(reta, *oi)
+                                return Logic.distribute_or(reto)
             return exp
         else:
-            for i, e in enumerate(cdr):
+            for i, e in enumerate(arg):
                 if Logic.islist(e):
                     exp[i+1] = Logic.distribute_or(e)
             return exp
@@ -240,157 +317,179 @@ class Logic:
         else:
             return False
 
-    def cnf(exp):
-        if not Logic.islist(exp):
-            return exp
-        exp = Logic.convert_eq(exp)
-        exp = Logic.convert_imp(exp)
-        exp = Logic.convert_not(exp)
-        if not Logic.islist(exp):
-            return exp
-        #while not Logic.is_cnf(exp):
-        if 1:
-            print(STR(exp))
-            #exp = Logic.distribute_or(exp)
-            exp = Logic.associate_or(exp)
-            exp = Logic.associate_and(exp)
-        return exp
-
 import unittest
 
-class TestSexpression(unittest.TestCase):
+class TestCNF(unittest.TestCase):
     def test_not(self):
+        return
         s = NOT(1)
-        print(STR(s))
-        s = Logic.cnf(s)
-        print(STR(s))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
         self.assertTrue(s == -1)
     
         s = NOT(NOT(1))
-        print(STR(s))
-        s = Logic.cnf(s)
-        print(STR(s))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
         self.assertTrue(s == 1)
         
         s = NOT(AND(1,2))
-        print(STR(s))
-        s = Logic.cnf(s)
-        print(STR(s))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
         self.assertTrue(s == OR(-1,-2))
         
         s = NOT(AND(-1,-2))
-        print(STR(s))
-        s = Logic.cnf(s)
-        print(STR(s))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
         self.assertTrue(s == OR(1,2))
     
         s = NOT(OR(1,2))
-        print(STR(s))
-        s = Logic.cnf(s)
-        print(STR(s))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
         self.assertTrue(s == AND(-1,-2))
         
         s = NOT(OR(-1,-2))
-        print(STR(s))
-        s = Logic.cnf(s)
-        print(STR(s))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
         self.assertTrue(s == AND(1,2))
         
         s = NOT(IMP(1,2))
-        print(STR(s))
-        s = Logic.cnf(s)
-        print(STR(s))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
         self.assertTrue(s == AND(1,-2))
         
         s = NOT(EQ(1,2))
-        print(STR(s))
-        s = Logic.cnf(s)
-        print(STR(s))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
         self.assertTrue(s == OR(AND(1,-2),AND(2,-1)))
 
     def test_associate(self):
+        return
         s = AND(1,AND(2,3))
-        print(STR(s))
-        s = Logic.cnf(s)
-        print(STR(s))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
         self.assertTrue(s == AND(1,2,3))
     
         s = AND(AND(2,3), 1)
-        print(STR(s))
-        s = Logic.cnf(s)
-        print(STR(s))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
         self.assertTrue(s == AND(2,3,1))
     
         s = AND(1,AND(2,3),4)
-        print(STR(s))
-        s = Logic.cnf(s)
-        print(STR(s))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
         self.assertTrue(s == AND(1,2,3,4))
     
         s = OR(1,OR(2,3))
-        print(STR(s))
-        s = Logic.cnf(s)
-        print(STR(s))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
         self.assertTrue(s == OR(1,2,3))
     
         s = OR(OR(2,3), 1)
-        print(STR(s))
-        s = Logic.cnf(s)
-        print(STR(s))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
         self.assertTrue(s == OR(2,3,1))
     
         s = OR(1,OR(2,3),4)
-        print(STR(s))
-        s = Logic.cnf(s)
-        print(STR(s))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
         self.assertTrue(s == OR(1,2,3,4))
     
+    def test_distribute(self):
+        s = OR(AND(2,3), 1)
+        c = AND(OR(2,1),OR(3,1))
+        self.assertTrue(CNF(s) == c)
+    
+        s = OR(1,AND(2,3))
+        c = AND(OR(1,2),OR(1,3))
+        self.assertTrue(CNF(s) == c)
+    
+        s = OR(1,2,AND(3,4))
+        c = AND(OR(1,2,3),OR(1,2,4))
+        self.assertTrue(CNF(s) == c)
+
+        s = OR(AND(1,2),3,4)
+        c = AND(OR(1,3,4),OR(2,3,4))
+        self.assertTrue(CNF(s) == c)
+
+        s = OR(1,AND(2,3),4)
+        c = AND(OR(1,2,4),OR(1,3,4))
+        self.assertTrue(CNF(s) == c)
+    
+        s = OR(1,2,AND(2,3),4,5)
+        c = AND(OR(1,2,2,4,5),OR(1,2,3,4,5))
+        self.assertTrue(CNF(s) == c)
+
+        return
+        s = EQ(1,-2)
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
+        s = EQ(3,EQ(1,-2))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
+    
+        s = NOT(AND(1,-2))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
+        s = NOT(OR(1,-2))
+        print(math_str(s))
+        s = CNF(s)
+        print(math_str(s))
+
+    def test_arity(self):
+        try:
+            s = NOT(1,-5)
+        except:
+            print('Raised as expected')
 
 if __name__ == '__main__':
+
     unittest.main()
 
     s = AND(1,2,3)
-    print(s)
-    print(STR(s))
+    print(math_str(s))
+    c = CNF(s)
+    print(math_str(c))
+    print(code_str(c))
+    print(wolf_str(EQ(s,c)))
+
+    s = AND(1,2,3)
+    print(math_str(s))
+    print(wolf_str(s))
 
     s = AND(1,OR(2,3),-4,-5)
-    print(s)
-    print(STR(s))
+    print(math_str(s))
+    print(wolf_str(s))
+    s = CNF(s)
+    print(math_str(s))
+    print(wolf_str(s))
 
-    try:
-        s = NOT(1,-5)
-    except:
-        print('Raised as expected')
+    s = EQ(2,3)
+    print(math_str(s))
+    print(wolf_str(s))
+    s = CNF(s)
+    print(math_str(s))
+    print(wolf_str(s))
 
-    s = OR(AND(2,3), 1)
-    print(STR(s))
-    s = Logic.cnf(s)
-    print(STR(s))
-
-    s = OR(1,AND(2,3))
-    print(STR(s))
-    s = Logic.cnf(s)
-    print(STR(s))
-
-    s = OR(1,AND(2,3),4)
-    print(STR(s))
-    s = Logic.cnf(s)
-    print(STR(s))
-
-    s = EQ(1,-2)
-    print(STR(s))
-    s = Logic.cnf(s)
-    print(STR(s))
-    s = EQ(3,EQ(1,-2))
-    print(STR(s))
-    s = Logic.cnf(s)
-    print(STR(s))
-
-    s = NOT(AND(1,-2))
-    print(STR(s))
-    s = Logic.cnf(s)
-    print(STR(s))
-    s = NOT(OR(1,-2))
-    print(STR(s))
-    s = Logic.cnf(s)
-    print(STR(s))
+    s = IMP(2,3)
+    print(math_str(s))
+    print(wolf_str(s))
+    s = CNF(s)
+    print(math_str(s))
+    print(wolf_str(s))
