@@ -1,9 +1,10 @@
 from copy import *
 
 """ Requires Python >= 3.5, syntax error otherwise """
-#import sys
-#if sys.version_info[0] < 3 or sys.version_info[1] < 5:
-#    print('This module requires at least python3.5')
+
+__all__ = ['AND', 'OR', 'IMP', 'EQ', 'NOT', 'CNF', 'math_str', 'code_str', 'wolf_str', 'dimacs_str', 'is_cnf']
+
+## TODO: check input for AND, OR, etc ...
 
 def AND(*arg):
     assert(len(arg) >= -AND_op.arity)
@@ -30,11 +31,14 @@ def CNF(exp):
     exp = Logic.convert_not(exp)
     if not Logic.islist(exp):
         return exp
-    #while not Logic.is_cnf(exp):
-    if 1:
-        exp = Logic.distribute_or(exp)
+    while not is_cnf(exp):
+        #print('in:', code_str(exp))
         exp = Logic.associate_or(exp)
+        #print(code_str(exp))
         exp = Logic.associate_and(exp)
+        #print(code_str(exp))
+        exp = Logic.distribute_or(exp)
+        #print('out:', code_str(exp))
     return exp
 
 class AND_op:
@@ -262,6 +266,7 @@ class Logic:
             return exp
 
     def associate_or(exp):
+        """ exp must be a list """
         car, cdr = Logic.lisp(exp)
         if car.func == OR:
             for i, e in enumerate(cdr):
@@ -279,6 +284,7 @@ class Logic:
             return exp
 
     def associate_and(exp):
+        """ exp must be a list """
         car, cdr = Logic.lisp(exp)
         if car.func == AND:
             for i, e in enumerate(cdr):
@@ -295,201 +301,189 @@ class Logic:
                     exp[i+1] = Logic.associate_and(e)
             return exp
 
-    def is_cnf(exp):
-        if not Logic.islist(exp):
-            return True
-        car, cdr = Logic.lisp(exp)
-        if car.func == AND:
-            for e in cdr:
-                if Logic.islist(e):
-                    car.func, cdr2 = Logic.lisp(e)
-                    if car.func != OR:
-                        return False
-                    for e2 in cdr2:
-                        if Logic.islist(e2):
-                            return False
-            return True
-        elif car.func == OR:
-            for e in cdr:
-                if Logic.islist(e):
+def is_cnf(exp):
+    if not Logic.islist(exp):
+        return True
+    car, cdr = Logic.lisp(exp)
+    if car.func == AND:
+        for e in cdr:
+            if Logic.islist(e):
+                car, cdr2 = Logic.lisp(e)
+                if car.func != OR:
                     return False
-            return True
-        else:
-            return False
+                for e2 in cdr2:
+                    if Logic.islist(e2):
+                        return False
+        return True
+    elif car.func == OR:
+        for e in cdr:
+            if Logic.islist(e):
+                return False
+        return True
+    else:
+        return False
 
 import unittest
 
 class TestCNF(unittest.TestCase):
+    def test_basic(self):
+        s = AND(1,2,3)
+        c = AND(1,2,3)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
+    
+        s = OR(1,2,3)
+        c = OR(1,2,3)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
+    
+        s = EQ(2,3)
+        c = AND(OR(-2,3),OR(-3,2))
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
+    
+        s = EQ(1,-2)
+        c = AND(OR(-1,-2),OR(2,1))
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
+
+        s = IMP(2,3)
+        c = OR(-2,3)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
+    
     def test_not(self):
-        return
         s = NOT(1)
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        self.assertTrue(s == -1)
+        c = -1
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
     
         s = NOT(NOT(1))
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        self.assertTrue(s == 1)
+        c = 1
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
         
         s = NOT(AND(1,2))
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        self.assertTrue(s == OR(-1,-2))
+        c = OR(-1,-2)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
         
+        s = NOT(AND(1,-2))
+        c = OR(-1,2)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
+
         s = NOT(AND(-1,-2))
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        self.assertTrue(s == OR(1,2))
+        c = OR(1,2)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
     
         s = NOT(OR(1,2))
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        self.assertTrue(s == AND(-1,-2))
+        c = AND(-1,-2)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
         
         s = NOT(OR(-1,-2))
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        self.assertTrue(s == AND(1,2))
+        c = AND(1,2)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
         
+        s = NOT(OR(-1,2))
+        c = AND(1,-2)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
+
         s = NOT(IMP(1,2))
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        self.assertTrue(s == AND(1,-2))
+        c = AND(1,-2)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
         
         s = NOT(EQ(1,2))
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        self.assertTrue(s == OR(AND(1,-2),AND(2,-1)))
+        c = AND(OR(1,2),OR(1,-1),OR(-2,2),OR(-2,-1))
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
 
     def test_associate(self):
-        return
         s = AND(1,AND(2,3))
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        self.assertTrue(s == AND(1,2,3))
+        c = AND(1,2,3)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
     
         s = AND(AND(2,3), 1)
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        self.assertTrue(s == AND(2,3,1))
+        c = AND(2,3,1)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
     
         s = AND(1,AND(2,3),4)
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        self.assertTrue(s == AND(1,2,3,4))
+        c = AND(1,2,3,4)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
     
         s = OR(1,OR(2,3))
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        self.assertTrue(s == OR(1,2,3))
+        c = OR(1,2,3)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
     
         s = OR(OR(2,3), 1)
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        self.assertTrue(s == OR(2,3,1))
+        c = OR(2,3,1)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
     
         s = OR(1,OR(2,3),4)
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        self.assertTrue(s == OR(1,2,3,4))
+        c = OR(1,2,3,4)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
     
     def test_distribute(self):
         s = OR(AND(2,3), 1)
         c = AND(OR(2,1),OR(3,1))
         self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
     
         s = OR(1,AND(2,3))
         c = AND(OR(1,2),OR(1,3))
         self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
     
         s = OR(1,2,AND(3,4))
         c = AND(OR(1,2,3),OR(1,2,4))
         self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
 
         s = OR(AND(1,2),3,4)
         c = AND(OR(1,3,4),OR(2,3,4))
         self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
 
         s = OR(1,AND(2,3),4)
         c = AND(OR(1,2,4),OR(1,3,4))
         self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
     
         s = OR(1,2,AND(2,3),4,5)
         c = AND(OR(1,2,2,4,5),OR(1,2,3,4,5))
         self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
 
-        return
-        s = EQ(1,-2)
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
+    def test_eq(self):
+        ## UNCHECKED!!!
         s = EQ(3,EQ(1,-2))
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
+        c = AND(OR(-3,-1,-2),OR(-3,2,1),OR(1,-2,3),OR(1,-1,3),OR(2,-2,3),OR(2,-1,3))
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
     
-        s = NOT(AND(1,-2))
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-        s = NOT(OR(1,-2))
-        print(math_str(s))
-        s = CNF(s)
-        print(math_str(s))
-
     def test_arity(self):
         try:
             s = NOT(1,-5)
         except:
             print('Raised as expected')
 
-if __name__ == '__main__':
+    def test_other(self):
+        s = AND(1,OR(2,3),-4,-5)
+        c = AND(1,OR(2,3),-4,-5)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
 
+if __name__ == '__main__':
     unittest.main()
 
-    s = AND(1,2,3)
-    print(math_str(s))
-    c = CNF(s)
-    print(math_str(c))
-    print(code_str(c))
-    print(wolf_str(EQ(s,c)))
-
-    s = AND(1,2,3)
-    print(math_str(s))
-    print(wolf_str(s))
-
-    s = AND(1,OR(2,3),-4,-5)
-    print(math_str(s))
-    print(wolf_str(s))
-    s = CNF(s)
-    print(math_str(s))
-    print(wolf_str(s))
-
-    s = EQ(2,3)
-    print(math_str(s))
-    print(wolf_str(s))
-    s = CNF(s)
-    print(math_str(s))
-    print(wolf_str(s))
-
-    s = IMP(2,3)
-    print(math_str(s))
-    print(wolf_str(s))
-    s = CNF(s)
-    print(math_str(s))
-    print(wolf_str(s))
