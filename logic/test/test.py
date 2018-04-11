@@ -1,5 +1,6 @@
 from logic import *
 import unittest
+import pycosat
 
 class TestCNF(unittest.TestCase):
     def test_basic(self):
@@ -198,6 +199,27 @@ class TestCNF(unittest.TestCase):
         s = AND(OR(-2,-4),OR(-4,-6,-12),OR(-2,-4,-12))
         p = 'p cnf 4 3\n-2 -4 0\n-4 -6 -12 0\n-2 -4 -12 0\n'
         self.assertTrue(dimacs_str(s) == p)
+
+    def test_to_sat(self):
+        s = 1
+        o = [[1]]
+        self.assertTrue(to_sat(s) == o)
+        pycosat.solve(o)
+
+        s = OR(*range(1,5))
+        o = [[1,2,3,4]]
+        self.assertTrue(to_sat(s) == o)
+        pycosat.solve(o)
+
+        s = AND(OR(1,3),OR(-1,2),OR(2,3,-4))
+        o = [[1,3],[-1,2],[2,3,-4]]
+        self.assertTrue(to_sat(s) == o)
+        pycosat.solve(o)
+
+        s = AND(5,OR(1,3),-7,OR(-1,2),OR(2,3,-4),6)
+        o = [[5],[1,3],[-7],[-1,2],[2,3,-4],[6]]
+        self.assertTrue(to_sat(s) == o)
+        pycosat.solve(o)
 
 if __name__ == '__main__':
     unittest.main()

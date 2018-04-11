@@ -2,7 +2,7 @@ from copy import *
 
 """ Requires Python >= 3.5, syntax error otherwise """
 
-__all__ = ['AND', 'OR', 'IMP', 'EQ', 'NOT', 'CNF', 'math_str', 'code_str', 'wolf_str', 'dimacs_str', 'is_cnf', 'count_variable']
+__all__ = ['AND', 'OR', 'IMP', 'EQ', 'NOT', 'CNF', 'math_str', 'code_str', 'wolf_str', 'dimacs_str', 'is_cnf', 'count_variable', 'to_sat']
 
 ## TODO: check input for AND, OR, etc ... must be non zero integers
 
@@ -189,6 +189,26 @@ def dimacs_str(exp):
     else:
         ## Ultra degenerated case
         return 'p cnf 1 1\n%d 0\n'%exp
+
+def to_sat(exp):
+    """ Return a list of list, suitable for e.g. Pycosat input """
+    if not is_cnf(exp):
+        Exception('Expression is not CNF, cannot convert to sat')
+    if islist(exp):
+        car, cdr = lisp(exp)
+        if car.func == AND:
+            for i, e in enumerate(cdr):
+                if islist(e):
+                    cdr[i] = e[1:]
+                else:
+                    cdr[i] = [e]
+            return cdr
+        elif car.func == OR:
+            ## only one clause
+            return [cdr]
+    else:
+        ## Can only occur at root of the tree
+        return [[exp]]
 
 def islist(exp):
     return type(exp) != type(int())
