@@ -2,6 +2,7 @@ import sys
 import numpy as np
 import itertools as it
 from variable import *
+import logic
 
 def debug(*args):
     print(*args, file=sys.stderr)
@@ -60,10 +61,10 @@ class SatBuild:
         cnf.extend(cl)
         self.start_slot = SatVariable((pb.n_teacher, pb.n_slot), offset=self.day.max())
         self.end_slot = SatVariable((pb.n_teacher, pb.n_slot), offset=self.start_slot.max())
-        #cnf.extend(self.teacher_day_start_slot())
-        #cnf.extend(self.teacher_day_end_slot())
+        cnf.extend(self.teacher_day_start_slot())
+        cnf.extend(self.teacher_day_end_slot())
         self.cnf = cnf
-        debug(self.var.cardinal(), 'variables')
+        debug(self.var.cardinal() + self.start_slot.cardinal() + self.end_slot.cardinal(), 'variables')
         debug(len(cnf), 'total clauses')
 
     def all_course(self):
@@ -152,22 +153,57 @@ class SatBuild:
         NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
         clause = list()
         for t, s in self.start_slot:
+            ## List all the courses that are mappable to this slot
+            first = [ self.var.number(t, c, s) for c in range(NC) ]
+            idx = np.where(self.pb.slot_order[:,s])[0]
+            if len(idx):
+                ## Slot has other slots before him: if this is the first slot
+                ## none of them should be true
+                before = [ -self.var.number(t, c, s2) for s2 in idx for c in range(NC) ]
+                ## This slot is first if one of the courses occupies it and
+                ## none of the slots before is busy
+                exp = logic.EQ(self.start_slot.number(t, s), logic.AND(logic.OR(*first), *before))
+            else:
+                ## Slot is the first in the day: it is the starting slot if
+                ## actually busy
+                exp = logic.EQ(self.start_slot.number(t, s), logic.OR(*first))
+            exp = logic.CNF(exp)
+            clause.extend(logic.to_sat(exp))
+        debug(len(clause), 'first slot clauses')
+        return clause
+
+    def teacher_day_end_slot(self):
+        ## Set of booleans, one of them is true indicating the last busy slot
+        ## of the day
+        NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
+        clause = list()
+        for t, s in self.end_slot:
+            ## List all the courses that are mappable to this slot
+            last = [ self.var.number(t, c, s) for c in range(NC) ]
             idx = np.where(self.pb.slot_order[s])[0]
             if len(idx):
-                ## Slots has other slots before him
-                q = [ self.var.number(t, c, s2) for s2 in idx for c in range(NC) ]
-                clause.extend(CNF.equal_and(self.start_slot.number(t, s), q))
+                ## Slot has other slots after him: if this is the last slot
+                ## none of them should be true
+                after = [ -self.var.number(t, c, s2) for s2 in idx for c in range(NC) ]
+                ## This slot is last if one of the courses occupies it and
+                ## none of the slots after is busy
+                exp = logic.EQ(self.end_slot.number(t, s), logic.AND(logic.OR(*last), *after))
             else:
-                ## Slot is the first in the day
-                for c in range(NC):
-                    clause.extend(CNF.equal(self.start_slot.number(t, s), self.var.number(t, c, s)))
-            for s2 in range(s+1, NS):
-                if self.pb.slot_order[s, s2]:
-                    ## s is before s2 in the same day
-                    pass 
-                elif self.pb.slot_order[s2, s]:
-                    ## s2 is before s in the same day
-                    pass
+                ## Slot is the last in the day: it is the ending slot if
+                ## actually busy
+                exp = logic.EQ(self.end_slot.number(t, s), logic.OR(*last))
+            exp = logic.CNF(exp)
+            clause.extend(logic.to_sat(exp))
+        debug(len(clause), 'end slot clauses')
+        return clause
+
+#            for s2 in range(s+1, NS):
+#                if self.pb.slot_order[s, s2]:
+#                    ## s is before s2 in the same day
+#                    pass 
+#                elif self.pb.slot_order[s2, s]:
+#                    ## s2 is before s in the same day
+#                    pass
 
     def to_dimacs(self):
         ## Conjunction of all the constraints

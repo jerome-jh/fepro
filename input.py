@@ -329,9 +329,9 @@ if __name__ == '__main__':
     f.write(s)
     f.close()
     
-    if 0:
+    if 1:
         sol = sat.solve.solve(sol.cnf, a=True)
         debug('%d solutions'%len(sol))
-        if 0:
+        if 1:
             debug(sol)
 
