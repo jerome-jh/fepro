@@ -6,6 +6,8 @@ from collections import OrderedDict
 import sat.solve
 import sat.build
 import mzn.build
+import logic
+import variable
 
 np.set_printoptions(threshold=np.nan)
 
@@ -137,7 +139,7 @@ class Problem:
         for d in self.day:
             for i, j in it.product(range(len(d['slot'])), range(len(d['slot']))):
                 if i == j:
-                    ## A slot is not considered overlapping with itself
+                    overlap[s+i,s+j] = True
                     continue
                 s1, d1 = d['slot'][i]
                 s2, d2 = d['slot'][j]
@@ -147,7 +149,6 @@ class Problem:
                     overlap[s+j,s+i] = True
             s += len(d['slot'])
         assert(s == N)
-        #debug(overlap)
         self.n_slot = N
         self.slot_overlap = overlap
 
@@ -169,6 +170,8 @@ class Problem:
             if s1 + d1 > s2 and s2 + d2 > s1:
                  overlap[i,j] = True
                  overlap[j,i] = True
+        for i in range(N):
+            overlap[i,i] = True
         assert(overlap.shape == self.slot_overlap.shape)
         assert(np.all(overlap == self.slot_overlap))
 
@@ -316,22 +319,26 @@ if __name__ == '__main__':
     ## TODO: check no slot with duration == 0
     pb.build()
     #debug(pb)
-    sol = mzn.build.MznBuild(pb)
-    s = str(sol)
-    f = open('sat.mzn', 'wt')
-    f.write(s)
-    f.close()
+    if 1:
+        sol = mzn.build.MznBuild(pb)
+        s = str(sol)
+        f = open('sat.mzn', 'wt')
+        f.write(s)
+        f.close()
 
-    sol = sat.build.SatBuild(pb)
-    #debug(sol.cnf)
-    s = str(sol)
-    f = open('sat.cnf', 'wt')
-    f.write(s)
-    f.close()
+    variable.Variable.reset()
+
+    if 1:
+        sol = sat.build.SatBuild(pb)
+        #debug(sol.cnf)
+        s = str(sol)
+        f = open('sat.cnf', 'wt')
+        f.write(s)
+        f.close()
     
     if 1:
         sol = sat.solve.solve(sol.cnf, a=True)
         debug('%d solutions'%len(sol))
-        if 1:
+        if 0:
             debug(sol)
 

@@ -6,7 +6,12 @@ def debug(*args):
     print(*args, file=sys.stderr)
 
 class Variable:
-    def __init__(self, vect, prefix='x', offset=0):
+    ## Variables have a unique integer id. Offset is updated consequently
+    offset = 1
+    def reset():
+        Variable.offset = 1
+
+    def __init__(self, vect, prefix='x'):
         """ vect[0] is the slower varying index, vect[N-1] the faster varying index """
         N = len(vect)
         base = np.ndarray((N+1,), dtype='u4')
@@ -14,20 +19,26 @@ class Variable:
         base[1:] = np.flipud(np.asarray(vect, dtype='u4'))
         self.base = np.flipud(np.cumprod(base, dtype='u4'))
         self.vect = vect
-        self.offset = offset
+        self.prefix = prefix
+        self.offset = Variable.offset
+        Variable.offset = self.max()
 
     def cardinal(self):
-        return self.base[0]
+        return int(self.base[0])
 
     def max(self):
         return self.cardinal() + self.offset
+
+    def range(self):
+        return range(self.offset, self.max())
 
     def last(self):
         return self.max() - 1
 
     def vnumber(self, vect):
         assert(len(vect) == len(self.vect))
-        return np.dot(self.base[1:], vect) + self.offset
+        ## Convert to Python int (otherwise this is a Numpy int)
+        return int(np.dot(self.base[1:], vect) + self.offset)
 
     def number(self, *args):
         return self.vnumber(args)
@@ -39,7 +50,7 @@ class Variable:
         return self.vname(args)
 
     def index(self, n):
-        assert(n >= self.offset and n < self.offset + v.cardinal())
+        assert(n >= self.offset and n < self.offset + self.cardinal())
         N = self.base.shape[0]-1
         idx = np.ndarray((N,), dtype='u4')
         n -= self.offset

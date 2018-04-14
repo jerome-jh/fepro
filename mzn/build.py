@@ -2,6 +2,7 @@ import sys
 import numpy as np
 import itertools as it
 from variable import *
+import logic
 
 def debug(*args):
     print(*args, file=sys.stderr)
@@ -13,11 +14,10 @@ def mcat(s, iter_of_str):
 
 class MznVariable(Variable):
     def __init__(self, vect, prefix='x'):
-        super().__init__(vect, offset=1, prefix=prefix)
-        self.prefix = prefix
+        super().__init__(vect, prefix=prefix)
 
     def vname(self, vect):
-        return '%s[%d]'%(self.prefix, super().vnumber(vect))
+        return '%s[%d]'%(self.prefix, super().vnumber(vect) - self.offset + 1)
 
 class MznBuild:
     def __init__(self, pb):
@@ -34,9 +34,33 @@ class MznBuild:
         ## Optimizing constraints
         self.day = MznVariable((pb.n_teacher, pb.n_day), prefix='d')
         mzn += self.teacher_day()
+
+        self.start_slot = MznVariable((pb.n_teacher, pb.n_slot), prefix='fs')
+        print('Start slot vars', self.day.max(), self.start_slot.max())
+        self.end_slot = MznVariable((pb.n_teacher, pb.n_slot), prefix='ls')
+        print('Start slot vars', self.start_slot.max(), self.end_slot.max())
+        cl = self.teacher_day_start_slot()
+        mzn += self.to_mzn(cl, self.start_slot)
+        cl = self.teacher_day_end_slot()
+        mzn += self.to_mzn(cl, self.end_slot)
+
+        ## TODO: calculate upper bound
+        opt = 'var int: cost;\nconstraint cost = 2400 * n_day'
+        assert(self.start_slot.cardinal() == self.end_slot.cardinal())
+        for x in self.start_slot.range():
+            t, s = self.start_slot.index(x)
+            f = pb.slot[s]['start_time']
+            opt += ' - %d * %s'%(f,self.start_slot.name(t,s))
+        for x in self.end_slot.range():
+            t, s = self.end_slot.index(x)
+            f = pb.slot[s]['start_time'] + pb.slot[s]['duration']
+            opt += ' + %d * %s'%(f,self.end_slot.name(t,s))
+        opt += ';\n'
         #self.mzn = mzn + 'solve satisfy;\n'
-        self.mzn = mzn + 'solve minimize n_day;\n'
-        debug(self.var.cardinal(), 'variables')
+        mzn += opt
+        mzn += 'solve minimize cost;\n'
+        self.mzn = mzn
+        debug(self.var.cardinal() + self.start_slot.cardinal() + self.end_slot.cardinal(), 'variables')
         debug(mzn.count('\n') - 2, 'total clauses')
 
     def all_course(self):
@@ -77,10 +101,12 @@ class MznBuild:
             if self.pb.slot_overlap[s1][s2]:
                 ## Teacher slots cannot overlap
                 for t, c1, c2 in it.product(range(NT), range(NC), range(NC)):
-                    cl_to += 'constraint not %s \/ not %s;\n'%(self.var.name(t, c1, s1), self.var.name(t, c2, s2))
+                    if c1 != c2:
+                        cl_to += 'constraint not %s \/ not %s;\n'%(self.var.name(t, c1, s1), self.var.name(t, c2, s2))
                 ## Class slots cannot overlap
                 for c, t1, t2 in it.product(range(NC), range(NT), range(NT)):
-                    cl_go += 'constraint not %s \/ not %s;\n'%(self.var.name(t1, c, s1), self.var.name(t2, c, s2))
+                    if t1 != t2:
+                        cl_go += 'constraint not %s \/ not %s;\n'%(self.var.name(t1, c, s1), self.var.name(t2, c, s2))
         debug(cl_to.count('\n'), 'clauses teacher no overlap')
         debug(cl_go.count('\n'), 'clauses class no overlap')
         return (cl_to, cl_go)
@@ -114,6 +140,79 @@ class MznBuild:
         clause += 'var 0..%d: n_day;\nconstraint n_day = sum(d);\n'%self.day.cardinal()
         debug(clause.count('\n') - 3, 'day clauses')
         return clause
+
+    def teacher_day_start_slot(self):
+        ## Set of booleans, one of them is true indicating the first busy slot
+        ## of the day
+        NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
+        clause = list()
+        for t, s in self.start_slot:
+            ## List all the courses that are mappable to this slot
+            first = [ self.var.number(t, c, s) for c in range(NC) ]
+            idx = np.where(self.pb.slot_order[:,s])[0]
+            if len(idx):
+                ## Slot has other slots before him: if this is the first slot
+                ## none of them should be true
+                before = [ -self.var.number(t, c, s2) for s2 in idx for c in range(NC) ]
+                ## This slot is first if one of the courses occupies it and
+                ## none of the slots before is busy
+                exp = logic.EQ(self.start_slot.number(t, s), logic.AND(logic.OR(*first), *before))
+            else:
+                ## Slot is the first in the day: it is the starting slot if
+                ## actually busy
+                exp = logic.EQ(self.start_slot.number(t, s), logic.OR(*first))
+            exp = logic.CNF(exp)
+            clause.extend(logic.to_sat(exp))
+        debug(len(clause), 'first slot clauses')
+        return clause
+
+    def teacher_day_end_slot(self):
+        ## Set of booleans, one of them is true indicating the last busy slot
+        ## of the day
+        NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
+        clause = list()
+        for t, s in self.end_slot:
+            ## List all the courses that are mappable to this slot
+            last = [ self.var.number(t, c, s) for c in range(NC) ]
+            idx = np.where(self.pb.slot_order[s])[0]
+            if len(idx):
+                ## Slot has other slots after him: if this is the last slot
+                ## none of them should be true
+                after = [ -self.var.number(t, c, s2) for s2 in idx for c in range(NC) ]
+                ## This slot is last if one of the courses occupies it and
+                ## none of the slots after is busy
+                exp = logic.EQ(self.end_slot.number(t, s), logic.AND(logic.OR(*last), *after))
+            else:
+                ## Slot is the last in the day: it is the ending slot if
+                ## actually busy
+                exp = logic.EQ(self.end_slot.number(t, s), logic.OR(*last))
+            exp = logic.CNF(exp)
+            clause.extend(logic.to_sat(exp))
+        debug(len(clause), 'end slot clauses')
+        return clause
+
+    def get_var(self, n):
+        for v in (self.var, self.day, self.start_slot, self.end_slot):
+            if n in v.range():
+                return v
+
+    def to_mzn(self, clause, var):
+        s = 'int: N%s = %d;\n'%(var.prefix, var.cardinal())
+        s += 'array[1..N%s] of var bool: %s;\n'%(var.prefix,var.prefix)
+        for cl in clause:
+            s += 'constraint '
+            delim = ''
+            for o in cl:
+                s += delim
+                if o < 0:
+                    v = self.get_var(-o)
+                    s += 'not %s'%v.vname(v.index(-o))
+                else:
+                    v = self.get_var(o)
+                    s += '%s'%v.vname(v.index(o))
+                delim = ' \/ '
+            s += ';\n'
+        return s;
 
     def __str__(self):
         return self.mzn

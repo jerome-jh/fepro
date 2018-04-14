@@ -37,18 +37,14 @@ class CNF:
         return clause
 
 class SatVariable(Variable):
-    def __init__(self, vect, offset=1):
-        super().__init__(vect, offset=offset, prefix='')
-
-    def vnumber(self, vect):
-        assert(len(vect) == len(self.vect))
-        ## Convert to Python int (otherwise this is a Numpy int)
-        return int(np.dot(self.base[1:], vect) + self.offset)
+    def __init__(self, vect):
+        super().__init__(vect, prefix='')
 
 class SatBuild:
     def __init__(self, pb):
         self.pb = pb
         self.var = SatVariable((pb.n_teacher, pb.n_course, pb.n_slot))
+        print(self.var.range())
         cnf = list()
         ## Satisfaction variables
         mextend(cnf, self.forall())
@@ -56,15 +52,21 @@ class SatBuild:
         cnf.extend(self.all_course())
         cnf.extend(self.at_most_one())
         ## Optimizing variables
-        self.day = SatVariable((pb.n_teacher, pb.n_day), offset=self.var.max())
+        self.day = SatVariable((pb.n_teacher, pb.n_day))
+        print(self.day.range())
         cl = self.teacher_day_2()
         cnf.extend(cl)
-        self.start_slot = SatVariable((pb.n_teacher, pb.n_slot), offset=self.day.max())
-        self.end_slot = SatVariable((pb.n_teacher, pb.n_slot), offset=self.start_slot.max())
+        self.start_slot = SatVariable((pb.n_teacher, pb.n_slot))
+        print(self.start_slot.range())
+        print('Start slot vars', self.day.max(), self.start_slot.max())
+        self.end_slot = SatVariable((pb.n_teacher, pb.n_slot))
+        print(self.end_slot.range())
+        print('Start slot vars', self.start_slot.max(), self.end_slot.max())
         cnf.extend(self.teacher_day_start_slot())
         cnf.extend(self.teacher_day_end_slot())
         self.cnf = cnf
         debug(self.var.cardinal() + self.start_slot.cardinal() + self.end_slot.cardinal(), 'variables')
+        debug(self.end_slot.max())
         debug(len(cnf), 'total clauses')
 
     def all_course(self):
@@ -103,10 +105,12 @@ class SatBuild:
             if self.pb.slot_overlap[s1][s2]:
                 ## Teacher slots cannot overlap
                 for t, c1, c2 in it.product(range(NT), range(NC), range(NC)):
-                    cl_to.append([-self.var.number(t, c1, s1), -self.var.number(t, c2, s2)])
+                    if c1 != c2:
+                        cl_to.append([-self.var.number(t, c1, s1), -self.var.number(t, c2, s2)])
                 ## Class slots cannot overlap
                 for c, t1, t2 in it.product(range(NC), range(NT), range(NT)):
-                    cl_go.append([-self.var.number(t1, c, s1), -self.var.number(t2, c, s2)])
+                    if t1 != t2:
+                        cl_go.append([-self.var.number(t1, c, s1), -self.var.number(t2, c, s2)])
         debug(len(cl_to), 'clauses teacher no overlap')
         debug(len(cl_go), 'clauses class no overlap')
         return (cl_to, cl_go)
