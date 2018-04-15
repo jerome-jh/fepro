@@ -4,8 +4,7 @@ import itertools as it
 import s_expression.s_expression as se
 from collections import OrderedDict
 import sat.solve
-import sat.build
-import mzn.build
+import model
 import logic
 import variable
 
@@ -319,25 +318,26 @@ if __name__ == '__main__':
     ## TODO: check no slot with duration == 0
     pb.build()
     #debug(pb)
+
+    mod = model.Model(pb)
+
     if 1:
-        sol = mzn.build.MznBuild(pb)
-        s = str(sol)
         f = open('sat.mzn', 'wt')
-        f.write(s)
+        f.write(mod.to_mzn())
         f.close()
 
-    variable.Variable.reset()
-
     if 1:
-        sol = sat.build.SatBuild(pb)
-        #debug(sol.cnf)
-        s = str(sol)
         f = open('sat.cnf', 'wt')
-        f.write(s)
+        f.write(mod.to_dimacs())
         f.close()
     
     if 1:
-        sol = sat.solve.solve(sol.cnf, a=True)
+        f = open('sat.opb', 'wt')
+        f.write(mod.to_opb())
+        f.close()
+    
+    if len(mod.cnf) < 10000:
+        sol = sat.solve.solve(mod.cnf, a=True)
         debug('%d solutions'%len(sol))
         if 0:
             debug(sol)

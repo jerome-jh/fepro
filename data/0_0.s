@@ -1,4 +1,5 @@
 (
+(rem "One day, one teacher, one subject, one group")
 (teacher ((name t0) (subject (m0))))
 (day_type
     (name dt0)

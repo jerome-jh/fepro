@@ -1,69 +1,49 @@
-import sys
 import numpy as np
 import itertools as it
 from variable import *
 import logic
 
-def debug(*args):
-    print(*args, file=sys.stderr)
 
-def mextend(l, iter_of_iter):
-    for i in iter_of_iter:
-        l.extend(i)
-
-class CNF:
-    def equal(p, q):
-        """ Return p == q in CNF """
-        return [[-p, q], [-q, p]]
-
-    def equal_and(p, qi):
-        """ Return p == q1 and q2 and ... and qn in CNF """
-        clause = list()
-        cl = [p]
-        for q in qi:
-            cl.append(-q)
-            clause.append([-p, q])
-        clause.append(cl)
-        return clause
-
-    def equal_or(p, qi):
-        """ Return p == q1 or q2 or ... or qn in CNF """
-        clause = list()
-        cl = [-p]
-        for q in qi:
-            cl.append(q)
-            clause.append([-q, p])
-        clause.append(cl)
-        return clause
-
-class SatBuild:
+class Model:
     def __init__(self, pb):
         self.pb = pb
-        self.var = SatVariable((pb.n_teacher, pb.n_course, pb.n_slot))
-        print(self.var.range())
-        cnf = list()
-        ## Satisfaction variables
-        mextend(cnf, self.forall())
-        mextend(cnf, self.overlap())
-        cnf.extend(self.all_course())
-        cnf.extend(self.at_most_one())
-        ## Optimizing variables
-        self.day = SatVariable((pb.n_teacher, pb.n_day))
-        print(self.day.range())
-        cl = self.teacher_day_2()
-        cnf.extend(cl)
-        self.start_slot = SatVariable((pb.n_teacher, pb.n_slot))
-        print(self.start_slot.range())
-        print('Start slot vars', self.day.max(), self.start_slot.max())
-        self.end_slot = SatVariable((pb.n_teacher, pb.n_slot))
-        print(self.end_slot.range())
-        print('Start slot vars', self.start_slot.max(), self.end_slot.max())
-        cnf.extend(self.teacher_day_start_slot())
-        cnf.extend(self.teacher_day_end_slot())
-        self.cnf = cnf
-        debug(self.var.cardinal() + self.start_slot.cardinal() + self.end_slot.cardinal(), 'variables')
-        debug(self.end_slot.max())
-        debug(len(cnf), 'total clauses')
+
+        ## Clauses in CNF format
+        self.cnf = list()
+
+        ##
+        ## Satisfaction constraints
+        ##
+        ## Variables for teacher, course and slot assignement
+        self.var = Variable((pb.n_teacher, pb.n_course, pb.n_slot), 'x')
+        self.all_course()
+        self.match()
+        self.overlap()
+        self.at_most_one()
+
+        ##
+        ## Optimization constraints
+        ##
+        ## For every teacher, tell if teacher works on specific day 
+        self.day = Variable((pb.n_teacher, pb.n_day), 'd')
+        ## Start slot for every teacher
+        self.start_slot = Variable((pb.n_teacher, pb.n_slot), 'fs')
+        ## Start slot for every teacher
+        self.end_slot = Variable((pb.n_teacher, pb.n_slot), 'ls')
+
+        cl1 = self.teacher_day()
+        cl2 = self.teacher_day_2()
+        #assert(cl1 == cl2)
+        self.cnf.extend(cl1)
+        self.teacher_day_start_slot()
+        self.teacher_day_end_slot()
+        debug(len(self.cnf), 'total clauses')
+
+        ##
+        ## Optimization goal
+        ##
+        self.obj = list()
+        self.objective()
 
     def all_course(self):
         ## All courses must happen, whatever teacher or slot
@@ -76,9 +56,11 @@ class SatBuild:
             clause.append(cl)
         debug(len(clause), 'clauses all courses')
         assert(len(clause) == NC)
-        return clause
+        self.cnf.extend(clause)
 
-    def forall(self):
+    def match(self):
+        ## Match teacher and course subject
+        ## Match course duration and slot duration
         cl_ts = list()
         cl_cd = list()
         for t, c, s in self.var:
@@ -90,40 +72,43 @@ class SatBuild:
                 cl_cd.append([-self.var.number(t,c,s)])
         debug(len(cl_ts), 'clauses teacher - subject mapping')
         debug(len(cl_cd), 'clauses course duration - slot duration mapping')
-        return (cl_ts, cl_cd)
+        self.cnf.extend(cl_ts)
+        self.cnf.extend(cl_cd)
 
     def overlap(self):
         cl_to = list()
         cl_go = list()
         NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
         for s1, s2 in it.product(range(NS), range(NS)):
-            ## overlap[s][s] is always false
             if self.pb.slot_overlap[s1][s2]:
+                ## Must be careful not to add a constraint -x \/ -x
                 ## Teacher slots cannot overlap
-                for t, c1, c2 in it.product(range(NT), range(NC), range(NC)):
-                    if c1 != c2:
-                        cl_to.append([-self.var.number(t, c1, s1), -self.var.number(t, c2, s2)])
+                for t, (c1, c2) in it.product(range(NT), it.combinations(range(NC), 2)):
+                    cl_to.append([-self.var.number(t, c1, s1), -self.var.number(t, c2, s2)])
                 ## Class slots cannot overlap
-                for c, t1, t2 in it.product(range(NC), range(NT), range(NT)):
-                    if t1 != t2:
-                        cl_go.append([-self.var.number(t1, c, s1), -self.var.number(t2, c, s2)])
+                for c, (t1, t2) in it.product(range(NC), it.combinations(range(NT), 2)):
+                    cl_go.append([-self.var.number(t1, c, s1), -self.var.number(t2, c, s2)])
         debug(len(cl_to), 'clauses teacher no overlap')
         debug(len(cl_go), 'clauses class no overlap')
-        return (cl_to, cl_go)
+        self.cnf.extend(cl_to)
+        self.cnf.extend(cl_go)
 
     def at_most_one(self):
-        ## A course must only be given once
+        ## Make sure a course is not given multiple times
         clause = list()
         NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
         for c in range(NC):
-            for t1, s1, t2, s2 in it.product(range(NT), range(NS), range(NT), range(NS)):
-                if t1 != t2 or s1 != s2:
+            for (t1, t2) in it.product(range(NT), range(NT)):
+                for (s1, s2) in it.combinations(range(NS), 2):
+                    clause.append([-self.var.number(t1, c, s1), -self.var.number(t2, c, s2)])
+            for (s1, s2) in it.product(range(NS), range(NS)):
+                for (t1, t2) in it.combinations(range(NT), 2):
                     clause.append([-self.var.number(t1, c, s1), -self.var.number(t2, c, s2)])
         debug(len(clause), 'clauses courses only once')
-        return clause
+        self.cnf.extend(clause)
 
     def teacher_day(self):
-        ## Minimize total days worked
+        """ Minimize total days worked """
         NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
         clause = list()
         for t, d in self.day:
@@ -133,8 +118,9 @@ class SatBuild:
                     cl.append(self.var.number(t,c,s))
                     cl2 = [ -self.var.number(t,c,s), self.day.number(t,d) ]
                     clause.append(cl2)
-            clause.append(cl)
+            clause.insert(0, cl)
         debug(len(clause), 'day clauses')
+        #print(clause)
         return clause
 
     def teacher_day_2(self):
@@ -142,9 +128,13 @@ class SatBuild:
         NS, NT, NC = (self.pb.n_slot, self.pb.n_teacher, self.pb.n_course)
         clause = list()
         for t, d in self.day:
-            q = [self.var.number(t,c,s) for s, c in it.product(range(NS), range(NC))]
-            clause.extend(CNF.equal_or(self.day.number(t,d), q))
+            q = list()
+            for s, c in it.product(range(NS), range(NC)):
+                if self.pb.slot_day[s, d]:
+                    q.append(self.var.number(t,c,s))
+            clause.extend(logic.to_sat(logic.CNF(logic.EQ(self.day.number(t,d), logic.OR(*q)))))
         debug(len(clause), 'day clauses')
+        #print(clause)
         return clause
 
     def teacher_day_start_slot(self):
@@ -170,7 +160,7 @@ class SatBuild:
             exp = logic.CNF(exp)
             clause.extend(logic.to_sat(exp))
         debug(len(clause), 'first slot clauses')
-        return clause
+        self.cnf.extend(clause)
 
     def teacher_day_end_slot(self):
         ## Set of booleans, one of them is true indicating the last busy slot
@@ -195,18 +185,65 @@ class SatBuild:
             exp = logic.CNF(exp)
             clause.extend(logic.to_sat(exp))
         debug(len(clause), 'end slot clauses')
-        return clause
+        self.cnf.extend(clause)
 
-#            for s2 in range(s+1, NS):
-#                if self.pb.slot_order[s, s2]:
-#                    ## s is before s2 in the same day
-#                    pass 
-#                elif self.pb.slot_order[s2, s]:
-#                    ## s2 is before s in the same day
-#                    pass
+    def objective(self):
+        obj_d = list()
+        for d in self.day.range():
+            obj_d.append([2400, d])
+        self.obj.extend(obj_d)
+
+        obj_s = list()
+        for x in self.start_slot.range():
+            t, s = self.start_slot.index(x)
+            f = self.pb.slot[s]['start_time']
+            obj_s.append([-f, x])
+        self.obj.extend(obj_s)
+
+        obj_e = list()
+        for x in self.end_slot.range():
+            t, s = self.end_slot.index(x)
+            f = self.pb.slot[s]['start_time'] + self.pb.slot[s]['duration']
+            obj_e.append([f, x])
+        self.obj.extend(obj_e)
+
+    def get_var(self, n):
+        for v in (self.var, self.day, self.start_slot, self.end_slot):
+            if n in v.range():
+                return v
+
+    def to_mzn(self):
+        s = ''
+        ## Satisfaction
+        for v in (self.var, self.day, self.start_slot, self.end_slot):
+            s += 'int: N%s = %d;\n'%(v.name,v.cardinal())
+            s += 'array[1..N%s] of var bool: %s;\n'%(v.name,v.name)
+        for cl in self.cnf:
+            s += 'constraint '
+            delim = ''
+            for o in cl:
+                s += delim
+                if o < 0:
+                    v = self.get_var(-o)
+                    s += 'not %s[%d]'%(v.name, -o - v.offset + 1)
+                else:
+                    v = self.get_var(o)
+                    s += '%s[%d]'%(v.name, o - v.offset + 1)
+                delim = ' \/ '
+            s += ';\n'
+        ## Objective
+        s += "var int: obj;\nconstraint obj = 0"
+        for o in self.obj:
+            v = self.get_var(o[1])
+            if o[0] < 0:
+                s += " - %d * %s[%d]"%(-o[0], v.name, o[1] - v.offset + 1)
+            else:
+                s += " + %d * %s[%d]"%(o[0], v.name, o[1] - v.offset + 1)
+        s += ";\nsolve minimize obj;\n"
+        return s;
 
     def to_dimacs(self):
-        ## Conjunction of all the constraints
+        """ Output satisfaction variables only """
         N = len(self.cnf)
         s = 'p cnf ' + str(self.var.cardinal()) + ' ' + str(N) + '\n'
         for i in range(N):
@@ -216,6 +253,26 @@ class SatBuild:
             s += '0\n'
         return s
 
-    def __str__(self):
-        return self.to_dimacs()
+    def to_opb(self):
+        ## SCIP requires thee plus signs
+        s = '* #variable= %d #constraint= %d\nmin:'%(Variable.offset - 1, len(self.cnf))
+        for o in self.obj:
+            v = self.get_var(o[1])
+            if o[0] < 0:
+                s += " %d x%d"%(o[0], o[1])
+            else:
+                s += " +%d x%d"%(o[0], o[1])
+        s += ';\n'
+        for cl in self.cnf:
+            lim = 1
+            for o in cl:
+                if o < 0:
+                    v = self.get_var(-o)
+                    s += '-1 x%d '%(-o)
+                    lim -= 1
+                else:
+                    v = self.get_var(o)
+                    s += '+1 x%d '%(o)
+            s += '>= %d;\n'%lim
+        return s
 

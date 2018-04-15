@@ -11,7 +11,7 @@ class Variable:
     def reset():
         Variable.offset = 1
 
-    def __init__(self, vect, prefix='x'):
+    def __init__(self, vect, name):
         """ vect[0] is the slower varying index, vect[N-1] the faster varying index """
         N = len(vect)
         base = np.ndarray((N+1,), dtype='u4')
@@ -19,7 +19,7 @@ class Variable:
         base[1:] = np.flipud(np.asarray(vect, dtype='u4'))
         self.base = np.flipud(np.cumprod(base, dtype='u4'))
         self.vect = vect
-        self.prefix = prefix
+        self.name = name
         self.offset = Variable.offset
         Variable.offset = self.max()
 
@@ -42,12 +42,6 @@ class Variable:
 
     def number(self, *args):
         return self.vnumber(args)
-
-    def vname(self, vect):
-        return self.prefix + str(super.vnumber(vect))
-
-    def name(self, *args):
-        return self.vname(args)
 
     def index(self, n):
         assert(n >= self.offset and n < self.offset + self.cardinal())

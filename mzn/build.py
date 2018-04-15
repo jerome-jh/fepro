@@ -46,14 +46,15 @@ class MznBuild:
 
         ## TODO: calculate upper bound
         opt = 'var int: cost;\nconstraint cost = 2400 * n_day'
+        opt = 'var int: cost;\nconstraint cost = 24 * n_day'
         assert(self.start_slot.cardinal() == self.end_slot.cardinal())
         for x in self.start_slot.range():
             t, s = self.start_slot.index(x)
-            f = pb.slot[s]['start_time']
+            f = pb.slot[s]['start_time'] // 100
             opt += ' - %d * %s'%(f,self.start_slot.name(t,s))
         for x in self.end_slot.range():
             t, s = self.end_slot.index(x)
-            f = pb.slot[s]['start_time'] + pb.slot[s]['duration']
+            f = (pb.slot[s]['start_time'] + pb.slot[s]['duration']) // 100
             opt += ' + %d * %s'%(f,self.end_slot.name(t,s))
         opt += ';\n'
         #self.mzn = mzn + 'solve satisfy;\n'
