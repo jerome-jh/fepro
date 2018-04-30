@@ -8,7 +8,7 @@
 		(LV1 (100 100 100))
 		(LV2 (100 100 100) (100 100))
 		(SVT (100 100) (100))
-                ("Sciences physique" (200) (100))
+                ("Physique-Chimie" (200) (100))
 		(Technologie (200 200) (200))
                 (EPS (200) (200 200))
                 ("Arts plastiques" (100))

@@ -2,13 +2,13 @@
 (level
 	(name "3ème")
 	(subject
-		(Français (200 100 100) (200 100 100))
+		(Français (200 100 100))
 		(Mathématiques (200 200) (200 100))
 		("Histoire-Géographie" (200 100 100) (100 100 100))
 		(LV1 (100 100 100))
 		(LV2 (100 100 100) (100 100))
 		(SVT (100 100) (100))
-                ("Sciences physique" (200) (100))
+                ("Sciences physiques" (200) (100))
 		(Technologie (200 200) (200))
                 (EPS (200) (200 200))
                 ("Arts plastiques" (100))

@@ -51,7 +51,6 @@ def merge_dict(d1, d2):
 class Problem:
     def __init__(self):
         self.teacher = list()
-        self.level = list()
         self.day_type = OrderedDict()
         self.day = list()
         self.level = OrderedDict()
@@ -89,6 +88,23 @@ class Problem:
         v = OrderedDict()
         v['level'] = d['level']
         self.group[d['name']] = v
+
+    def debug_input(self):
+        debug(len(self.teacher), 'teachers')
+        for t in self.teacher:
+            debug(t)
+        debug(len(self.day_type.keys()), 'day types')
+        for k,v in self.day_type.items():
+            debug(k, ':', v)
+        debug(len(self.day), 'days')
+        for d in self.day:
+            debug(d)
+        debug(len(self.level.keys()), 'levels')
+        for k,v in self.level.items():
+            debug(k, ':', v)
+        debug(len(self.group.keys()), 'groups')
+        for k,v in self.group.items():
+            debug(k, ':', v)
 
     def resolve_day(self):
         """ Map day to slot, resolving day_type """
@@ -298,8 +314,11 @@ def load_tuple(filename):
 
 if __name__ == '__main__':
     if True:
-        r = se.Parser().loadf(sys.argv[1])
-        ll = r.to_list()
+        ll = list()
+        for a in sys.argv[1:]:
+            debug('Loading', a)
+            r = se.Parser().loadf(a)
+            ll.extend(r.to_list())
     else:
         ll = load_tuple(sys.argv[1])
     pb = Problem()
@@ -314,6 +333,9 @@ if __name__ == '__main__':
             pb.add_day(e[1:])
         elif e[0] == 'group':
             pb.add_group(e[1:])
+    if 0:
+        pb.debug_input()
+
     ## TODO: check uniqueness of teacher, level, etc...
     ## TODO: check no slot with duration == 0
     pb.build()
