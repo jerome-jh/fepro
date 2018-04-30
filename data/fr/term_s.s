@@ -1,0 +1,16 @@
+(rem Source "http://eduscol.education.fr/cid66271/serie-s.html")
+(level
+	(name "Terminale S")
+	(subject
+		(Philosophie (200 100))
+		("Histoire-Géographie" (100 100))
+		(LV1 (100 100))
+		(LV2 (100 100))
+		(EPS (200))
+		("Enseignement moral et civique" (100) ())
+		(Mathématiques (200 200 200))
+                (Physique-chimie (200 200 100))
+                ("Option 1" (200 100) (200 200))
+		(Spécialité (200))
+	)
+)
